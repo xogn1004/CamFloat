@@ -141,9 +141,23 @@ try:
         assert playing(), 'Enlarging a screen interrupted playback'
         assert [t.worker.revision for t in window.tiles] == revisions, 'Enlargement started a new session'
     window.restore_focus()
+    # Both fullscreen routes must preserve all four RTSP sessions too.
+    window.select_slot(None)
+    window.toggle_fullscreen(window.selected)
+    QTest.qWait(100)
+    assert window.focused_screen is None and window.isFullScreen()
+    window.toggle_fullscreen(window.selected)
+    window.select_slot(2)
+    window.toggle_fullscreen(window.selected)
+    QTest.qWait(100)
+    assert window.focused_screen == 2 and window.isFullScreen()
+    window.handle_escape()
+    window.handle_escape()
+    assert playing()
     assert revisions == [t.worker.revision for t in window.tiles]
     assert native_handles == [int(t.winId()) for t in window.tiles]
     report['enlargement_no_reconnect'] = True
+    report['fullscreen_routes_no_reconnect'] = True
     handles = [int(t.winId()) for t in window.tiles]
     server.terminate()
     server.wait(5)
@@ -201,7 +215,7 @@ finally:
         server.terminate()
         server.wait(5)
     instance.release()
-    output = ROOT / 'verification' / VERSION
+    output = ROOT / 'verification' / 'current'
     output.mkdir(parents=True, exist_ok=True)
     (output / 'network-qa.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     print(json.dumps(report, indent=2))

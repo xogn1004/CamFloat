@@ -55,7 +55,7 @@ finally:
         server.terminate()
         server.wait(5)
     instance.release()
-    output = ROOT / 'verification' / VERSION
+    output = ROOT / 'verification' / 'current'
     output.mkdir(parents=True, exist_ok=True)
     (output / 'initial-failure-qa.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     print(json.dumps(report, indent=2))
