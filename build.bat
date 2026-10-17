@@ -22,6 +22,7 @@ if errorlevel 8 goto :failed
 copy /y README.md "%~dp0release\CamFloat\README.md" >nul
 copy /y CHANGELOG.md "%~dp0release\CamFloat\CHANGELOG.md" >nul
 copy /y THIRD_PARTY.md "%~dp0release\CamFloat\THIRD_PARTY.md" >nul
+copy /y CODE_REVIEW.md "%~dp0release\CamFloat\CODE_REVIEW.md" >nul
 if exist "%~dp0release\CamFloat\QA-summary.json" del /q "%~dp0release\CamFloat\QA-summary.json"
 robocopy "%~dp0licenses" "%~dp0release\CamFloat\licenses" /E /COPY:DAT /R:1 /W:1 /NFL /NDL /NJH /NJS
 if errorlevel 8 goto :failed

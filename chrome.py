@@ -41,6 +41,7 @@ class AppChrome(QWidget):
             button = self.button(row, f'layout{count}', tooltip(f'{count}분할', str(count)), lambda n=count: host.set_layout(n))
             button.setFixedWidth(24)
             button.setCheckable(True)
+            button.setAutoExclusive(True)
             self.layout_buttons[count] = button
         separator = QFrame()
         separator.setFixedSize(1, 18)
@@ -158,6 +159,7 @@ class AppChrome(QWidget):
         zone = QRect((self.host.width() - self.width()) // 2 - 8, 10, self.width() + 16, 48)
         if zone.contains(point) and (self.host.config['always_on_top'] or self.host.app_is_foreground()):
             self.reveal()
+            return
         elif self.isVisible() and not self.menu_open and time.monotonic() > self.deadline:
             self.hide()
             self.host.position_screen_labels()
