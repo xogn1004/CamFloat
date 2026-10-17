@@ -19,27 +19,28 @@ class ReleaseRC1(unittest.TestCase):
     setUp = fixtures.WindowTests.setUp
     tearDown = fixtures.WindowTests.tearDown
 
-    def test_fullscreen_locks_opacity_and_restores_all_surfaces(self):
+    def test_fullscreen_stays_opaque_and_restores_updated_setting(self):
         w = self.window
         w.set_opacity(45)
         handles = [int(t.winId()) for t in w.tiles]
         for _ in range(2):
+            w.set_opacity(45)
             w.toggle_layout_fullscreen()
             self.app.processEvents()
             self.assertEqual(w.config['opacity'], 45)
-            for surface in [w, w.chrome, w.toast] + [t.overlay for t in w.tiles]:
+            for surface in [w, w.chrome] + [t.overlay for t in w.tiles]:
                 self.assertEqual(surface.windowOpacity(), 1.0)
             w.set_opacity(80)
-            self.assertEqual(w.config['opacity'], 45)
+            self.assertEqual(w.config['opacity'], 80)
             menu = w.build_app_menu()
             opacity = next(a.menu() for a in menu.actions() if a.text() == '전체 투명도')
             slider = opacity.actions()[0].defaultWidget().findChild(QSlider)
-            self.assertEqual(slider.value(), 0)
-            self.assertFalse(slider.isEnabled())
+            self.assertEqual(slider.value(), 20)
+            self.assertTrue(slider.isEnabled())
             menu.deleteLater()
             w.handle_escape()
             self.assertFalse(w.isFullScreen())
-            self.assertAlmostEqual(w.windowOpacity(), .45, delta=.01)
+            self.assertAlmostEqual(w.windowOpacity(), .80, delta=.01)
             self.assertEqual(handles, [int(t.winId()) for t in w.tiles])
 
     def test_master_mute_preserves_individual_flags_and_survives_layouts(self):

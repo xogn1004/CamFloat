@@ -131,20 +131,16 @@ class ChromeGestures(unittest.TestCase):
             QTest.mouseDClick(overlay, Qt.MouseButton.LeftButton, pos=overlay.rect().center())
             self.assertEqual(self.window.selected, 0)
 
-    def test_chrome_toast_and_screen_button_order(self):
+    def test_chrome_without_toast_and_screen_button_order(self):
         self.assertFalse(app_icon().isNull())
         self.assertFalse(self.window.windowIcon().isNull())
         self.window.chrome.reveal()
         self.assertTrue(self.window.chrome.isVisible())
         self.assertTrue(self.window.chrome.layout_buttons[2].isChecked())
         self.window.set_layout(4)
-        self.assertTrue(self.window.toast.isVisible())
-        self.assertIn('4분할', self.window.toast.label.text())
-        self.window.toast.hide()
+        self.assertFalse(hasattr(self.window, 'toast'))
         self.window.set_layout(4)
-        self.assertFalse(self.window.toast.isVisible())
         self.window.single_view(1)
-        self.assertFalse(self.window.toast.isVisible())
         self.window.restore_focus()
         overlay = self.window.tiles[0].overlay
         overlay.reveal_controls()
@@ -160,7 +156,6 @@ class ChromeGestures(unittest.TestCase):
         self.assertLessEqual(self.window.chrome.geometry().right(), self.window.geometry().right())
         with self.window.modal():
             self.assertFalse(self.window.chrome.isVisible())
-            self.assertFalse(self.window.toast.isVisible())
 
 
 if __name__ == '__main__':

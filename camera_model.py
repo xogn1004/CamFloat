@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 APP_NAME = 'CamFloat'
+APP_TITLE = 'CamFloat - RTSP Stream Viewer'
 DLL_HANDLES = []
 LOAD_WARNINGS = []
 
@@ -73,7 +74,7 @@ def new_camera(name='', url=''):
 
 
 def default_config():
-    return dict(version=4, cameras=[], slots=[None] * 4, layout_slots=None, layout=1, always_on_top=True,
+    return dict(version=4, cameras=[], slots=[None] * 4, layout_slots=None, layout=1, split_orientation='horizontal', always_on_top=True,
                 hardware_acceleration=True, master_muted=False, opacity=100, geometry=None)
 
 
@@ -133,6 +134,8 @@ def normalize(raw, encrypted=False):
     result['master_muted'] = bool(raw.get('master_muted', False))
     layout = raw.get('layout', 1)
     result['layout'] = layout if type(layout) is int and layout in (1, 2, 4) else 1
+    orientation = raw.get('split_orientation', 'horizontal')
+    result['split_orientation'] = 'vertical' if orientation == 'vertical' else 'horizontal'
     result['opacity'] = bounded_int(raw.get('opacity'), 100, 20, 100)
     geometry = raw.get('geometry')
     if isinstance(geometry, list) and len(geometry) == 4:

@@ -19,7 +19,7 @@ def icon(name, color='#e1eaf8'):
     if name == 'refresh':
         painter.drawArc(QRectF(5, 5, 14, 14), 35 * 16, 285 * 16)
         line(19, 4, 19, 9); line(19, 9, 14, 9)
-    elif name == 'camera':
+    elif name in ('camera', 'cameras'):
         painter.drawRoundedRect(QRectF(3, 6, 13, 12), 2, 2)
         painter.drawPolygon(QPolygonF([QPointF(16, 10), QPointF(21, 7), QPointF(21, 17), QPointF(16, 14)]))
     elif name in ('volume', 'muted'):
@@ -45,20 +45,16 @@ def icon(name, color='#e1eaf8'):
         painter.setBrush(QColor(color))
         for x in (5, 12, 19):
             painter.drawEllipse(QRectF(x - 1, 11, 2, 2))
-    elif name in ('layout1', 'layout2', 'layout4'):
+    elif name in ('layout1', 'layout2', 'layout2_vertical', 'layout4'):
         painter.drawRoundedRect(QRectF(4, 4, 16, 16), 2, 2)
-        if name != 'layout1':
+        if name in ('layout2', 'layout4'):
             line(12, 4, 12, 20)
-        if name == 'layout4':
+        if name in ('layout2_vertical', 'layout4'):
             line(4, 12, 20, 12)
     elif name == 'layout':
         painter.drawRoundedRect(QRectF(3, 4, 18, 13), 2, 2)
         line(9, 17, 9, 21); line(15, 17, 15, 21); line(7, 21, 17, 21)
         line(9, 4, 9, 17)
-    elif name == 'cameras':
-        painter.drawRoundedRect(QRectF(3, 5, 18, 14), 2, 2)
-        painter.drawEllipse(QRectF(6, 9, 5, 5))
-        line(15, 9, 18, 9); line(15, 12, 18, 12); line(15, 15, 18, 15)
     elif name == 'enlarge':
         painter.drawRoundedRect(QRectF(3, 10, 11, 11), 1, 1)
         line(9, 15, 20, 4); line(13, 4, 20, 4); line(20, 4, 20, 11)

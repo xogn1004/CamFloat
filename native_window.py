@@ -14,6 +14,29 @@ user32.SetWindowLongW.restype = ctypes.c_long
 user32.GetForegroundWindow.restype = wintypes.HWND
 user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+user32.GetWindow.argtypes = [wintypes.HWND, wintypes.UINT]
+user32.GetWindow.restype = wintypes.HWND
+
+
+def keep_above_owned_windows(widget, siblings):
+    """Repair sibling activation order without activating or moving the owner.
+
+    Only raise when one of our visible video input windows is above the tools.
+    Never make a non-topmost app topmost or reorder it on every timer tick.
+    """
+    hwnd = int(widget.winId())
+    siblings = {int(s.winId()) for s in siblings if s.isVisible()}
+    previous = user32.GetWindow(hwnd, 3)  # GW_HWNDPREV
+    seen = set()
+    while previous and previous not in seen:
+        if previous in siblings:
+            if not user32.SetWindowPos(hwnd, None, 0, 0, 0, 0,
+                                       0x0001 | 0x0002 | 0x0010 | 0x0200):
+                raise ctypes.WinError(ctypes.get_last_error())
+            return True
+        seen.add(previous)
+        previous = user32.GetWindow(previous, 3)
+    return False
 
 
 def app_is_foreground():

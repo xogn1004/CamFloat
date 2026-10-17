@@ -3,10 +3,10 @@ import time
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QCursor, QPainter
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QToolButton, QWidget
 
 from icons import icon
-from native_window import set_topmost
+from native_window import keep_above_owned_windows, set_topmost
 from menu_labels import CAMERAS, fullscreen_name, topmost_name, master_mute_name, tooltip
 
 
@@ -81,12 +81,18 @@ class AppChrome(QWidget):
 
     def refresh(self):
         state = (self.host.config['layout'], self.host.config['always_on_top'],
-                 self.host.isFullScreen(), self.host.config.get('master_muted', False))
+                 self.host.isFullScreen(), self.host.config.get('master_muted', False),
+                 self.host.config['split_orientation'])
         if state == self.last_state:
             return
         self.last_state = state
         for count, button in self.layout_buttons.items():
             button.setChecked(count == self.host.config['layout'])
+        vertical = state[4] == 'vertical'
+        self.layout_buttons[2].setIcon(icon('layout2_vertical' if vertical else 'layout2'))
+        direction = ('좌우' if vertical else '상하') if state[0] == 2 else ('상하' if vertical else '좌우')
+        self.layout_buttons[2].setToolTip(tooltip(f'2분할 · {direction}로 전환', '2'))
+        self.layout_buttons[2].setAccessibleName(self.layout_buttons[2].toolTip())
         self.pin.setChecked(self.host.config['always_on_top'])
         self.pin.setToolTip(tooltip(topmost_name(state[1]), 'Ctrl+T'))
         self.pin.setAccessibleName(self.pin.toolTip())
@@ -99,7 +105,30 @@ class AppChrome(QWidget):
         self.fullscreen.setAccessibleName(self.fullscreen.toolTip())
 
     def position(self):
-        self.move(self.host.mapToGlobal(QPoint((self.host.width() - self.width()) // 2, 10)))
+        position = self.host.mapToGlobal(QPoint((self.host.width() - self.width()) // 2, 10))
+        if self.pos() != position:
+            self.move(position)
+
+    def maintain_front(self):
+        if (not self.isVisible() or self.menu_open or QApplication.activePopupWidget() is not None
+                or self.host.modal_depth or self.host.closing
+                or (not self.host.config['always_on_top'] and not self.host.app_is_foreground())):
+            return
+        if keep_above_owned_windows(self, [self.host] + [t.overlay for t in self.host.tiles]):
+            self.update()
+            self.panel.update()
+
+    def hideEvent(self, event):
+        # Recompose the layered input surfaces exposed by this owned window.
+        exposed = QRect(self.geometry())
+        super().hideEvent(event)
+        for tile in self.host.tiles:
+            overlay = tile.overlay
+            intersection = exposed.intersected(overlay.geometry())
+            if overlay.isVisible() and not intersection.isEmpty():
+                intersection.translate(-overlay.pos())
+                overlay.update(intersection)
+        self.host.position_screen_labels()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -115,7 +144,7 @@ class AppChrome(QWidget):
         if not self.isVisible():
             self.show()
             set_topmost(self, self.host.config['always_on_top'])
-            self.raise_()
+        self.maintain_front()
         self.host.position_screen_labels()
 
     def poll(self):
@@ -132,6 +161,8 @@ class AppChrome(QWidget):
         elif self.isVisible() and not self.menu_open and time.monotonic() > self.deadline:
             self.hide()
             self.host.position_screen_labels()
+        if self.isVisible():
+            self.maintain_front()
 
     def show_menu(self):
         self.menu_open = True
@@ -152,35 +183,3 @@ class AppChrome(QWidget):
             self.host.close()
         else:
             super().closeEvent(event)
-
-
-class LayoutToast(QWidget):
-    def __init__(self, host):
-        super().__init__(host, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
-                         | Qt.WindowType.NoDropShadowWindowHint | Qt.WindowType.WindowTransparentForInput)
-        self.host = host
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-        self.label = QLabel(self)
-        self.label.setStyleSheet('background:rgba(19,24,33,238);color:#e2edfc;'
-            'border:1px solid rgba(174,194,223,42);border-radius:12px;'
-            'font-family:Segoe UI;font-size:12px;font-weight:500;padding:11px 19px;')
-        self.timer = QTimer(self)
-        self.timer.setSingleShot(True)
-        self.timer.setInterval(1800)
-        self.timer.timeout.connect(self.hide)
-
-    def position(self):
-        self.move(self.host.mapToGlobal(QPoint((self.host.width() - self.width()) // 2,
-                                               max(12, self.host.height() - self.height() - 18))))
-
-    def notify(self, count):
-        self.label.setText(f'{count}분할로 변경되었습니다')
-        self.label.adjustSize()
-        self.resize(self.label.size())
-        self.position()
-        self.show()
-        set_topmost(self, self.host.config['always_on_top'])
-        self.raise_()
-        self.timer.start()
