@@ -26,7 +26,7 @@ from chrome import AppChrome, LayoutToast
 from menu_labels import CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, menu_text, tooltip
 from menu_widgets import switch_action
 
-VERSION = '0.7.1'
+VERSION = '0.7.2'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}

@@ -345,4 +345,6 @@ def make_vlc_instance(folder, *options):
     os.environ['PATH'] = str(folder) + os.pathsep + os.environ.get('PATH', '')
     os.environ['VLC_PLUGIN_PATH'] = str(folder / 'plugins')
     import vlc
-    return vlc.Instance('--no-video-title-show', '--quiet', '--rtsp-tcp', '--network-caching=450', *options)
+    # Follow VLC's default buffer. Forcing 450 ms can repeatedly display the
+    # connection-time HEVC image on some cameras while counters still advance.
+    return vlc.Instance('--no-video-title-show', '--quiet', '--rtsp-tcp', *options)

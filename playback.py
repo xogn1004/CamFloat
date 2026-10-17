@@ -88,7 +88,6 @@ class PlaybackWorker:
                         media = self.instance.media_new(url)
                         try:
                             media.add_option(':rtsp-tcp')
-                            media.add_option(':network-caching=450')
                             if url.startswith('file:'):
                                 media.add_option(':input-repeat=65535')
                             for option in media_options(self.profile, hardware):

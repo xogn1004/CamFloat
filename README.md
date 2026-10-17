@@ -1,6 +1,12 @@
-# CamFloat
+# CamFloat — RTSP Stream Viewer
 
 Windows용 RTSP 플레이어입니다. Python / PySide6(Qt) / libVLC로 만들고 PyInstaller로 묶었습니다. 실행 파일은 **`release\CamFloat\CamFloat.exe`**이며, 실행 PC에는 64비트 VLC media player가 설치되어 있어야 합니다. 배포할 때는 `_internal`을 포함한 해당 `CamFloat` 폴더 전체를 복사하세요. 기존 프로그램을 종료한 후 새 EXE를 실행하면 기존 설정을 읽습니다. 배포 폴더는 고정하고 변경 이력은 Git 커밋으로 관리합니다.
+
+## 0.7.2 영상 갱신 정지 수정
+
+일부 HEVC 카메라에서 450ms 버퍼를 강제하면 연결 당시 영상이 고정되는 현상을 재현했습니다. 인스턴스와 개별 미디어의 버퍼 강제를 모두 제거하고 VLC 기본값을 사용합니다. 문제 카메라로 실제 CamFloat 창에서 22초 동안 7개 시점의 영상 내용이 서로 다르게 갱신되는 것을 확인했습니다. 디코딩·출력 카운터 증가만으로 영상 갱신을 판정하지 않았습니다. 음성과 하드웨어 가속은 유지합니다.
+
+진단 로그는 `%LOCALAPPDATA%\CamFloat\diagnostics`에 기록됩니다. 주소·계정·카메라 이름·영상은 기록하지 않습니다. 0.5 복원본과 0.7.1 진단용 EXE는 이전 버퍼 설정이므로 이번 수정 확인에는 위의 기본 배포 경로를 사용하세요.
 
 ## 앱 도구와 화면 선택
 
