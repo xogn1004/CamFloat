@@ -41,6 +41,10 @@ def icon(name, color='#e1eaf8'):
         points = {'left': [(15, 5), (8, 12), (15, 19)], 'right': [(9, 5), (16, 12), (9, 19)],
                   'up': [(5, 15), (12, 8), (19, 15)], 'down': [(5, 9), (12, 16), (19, 9)]}[name]
         painter.drawPolyline(QPolygonF([QPointF(*p) for p in points]))
+    elif name == 'more':
+        painter.setBrush(QColor(color))
+        for x in (5, 12, 19):
+            painter.drawEllipse(QRectF(x - 1, 11, 2, 2))
     elif name == 'grid':
         for x in (4, 14):
             for y in (4, 14):

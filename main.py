@@ -8,23 +8,33 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer, QUrl
-from PySide6.QtGui import QActionGroup, QColor, QCursor, QPainter, QPen, QShortcut, QKeySequence
-from PySide6.QtWidgets import (QApplication, QDialog, QGridLayout, QHBoxLayout, QLabel, QMenu,
+from PySide6.QtGui import QActionGroup, QColor, QCursor, QIcon, QPainter, QPen, QShortcut, QKeySequence
+from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QMenu,
     QMessageBox, QSlider, QToolButton, QVBoxLayout, QWidget, QWidgetAction)
 
 from camera_model import (APP_NAME, LOAD_WARNINGS, camera_url, crypt, data_path, default_config, find_vlc_directory,
-    ensure_camera_numbers, ensure_layout_slots, fill_empty_slots, load_config, make_vlc_instance,
+    ensure_layout_slots, fill_empty_slots, load_config, make_vlc_instance,
     new_camera, redact, save_config, supports_quality)
 from dialogs import CameraManager
-from native_window import app_is_foreground, is_topmost, set_topmost
+from native_window import app_is_foreground, configure_app_identity, is_topmost, set_topmost, taskbar_icon_state
 from playback import PlaybackWorker
 from single_instance import InstanceGuard
 from icons import icon
+from chrome import AppChrome, LayoutToast
 
-VERSION = '0.5.0'
-MENU_STYLE = '''QMenu{background:#202936;color:#e8f0fb;border:1px solid #46536a;padding:6px;}
-QMenu::item{padding:5px 24px 5px 10px;} QMenu::item:selected{background:#3b5374;}
-QMenu::separator{height:1px;background:#46536a;margin:5px;}'''
+VERSION = '0.6.0'
+MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
+padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
+QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
+QMenu::item:selected{background:#2b3b52;} QMenu::item:disabled{color:#7e8ca2;}
+QMenu::separator{height:1px;background:#303b4e;margin:6px 4px;}
+QSlider::groove:horizontal{height:3px;background:#36455b;border-radius:1px;}
+QSlider::sub-page:horizontal{background:#8dbbfa;border-radius:1px;}
+QSlider::handle:horizontal{background:#d4e6ff;width:10px;margin:-4px 0;border-radius:5px;}'''
+
+
+def app_icon():
+    return QIcon(str(Path(__file__).resolve().with_name('camfloat.ico')))
 
 
 class PlayerTile(QWidget):
@@ -151,7 +161,12 @@ class InputOverlay(QWidget):
         self.empty.setWordWrap(True)
         self.empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.bar = QWidget(self)
-        self.bar.setStyleSheet('QWidget{background:rgba(12,18,28,210);border-radius:7px;color:#e4edfb;}')
+        self.bar.setObjectName('screenBar')
+        self.bar.setStyleSheet('QWidget#screenBar{background:rgba(19,24,33,235);border-radius:10px;'
+            'border:1px solid rgba(174,194,223,35);color:#dce8f8;}'
+            'QSlider::groove:horizontal{height:3px;background:#3b485c;border-radius:1px;}'
+            'QSlider::sub-page:horizontal{background:#8dbbfa;}'
+            'QSlider::handle:horizontal{background:#d4e6ff;width:9px;margin:-3px 0;border-radius:4px;}')
         row = QHBoxLayout(self.bar)
         row.setContentsMargins(5, 3, 5, 3)
         row.setSpacing(3)
@@ -182,11 +197,11 @@ class InputOverlay(QWidget):
         self.value.setFixedWidth(25)
         self.value.setStyleSheet('background:transparent;')
         row.addWidget(self.reload)
-        row.addWidget(self.choose)
         row.addWidget(self.mute)
         row.addWidget(self.volume)
         row.addWidget(self.value)
-        self.fullscreen = button('fullscreen', '전체화면 (F11)', lambda: self.host.toggle_fullscreen(self.index))
+        row.addWidget(self.choose)
+        self.fullscreen = button('fullscreen', '이 화면 전체화면 (F11)', lambda: self.host.toggle_fullscreen(self.index))
         row.addWidget(self.fullscreen)
         self.previous = button('left', '이전 카메라 (←)', lambda: self.host.cycle_camera(-1))
         self.following = button('right', '다음 카메라 (→)', lambda: self.host.cycle_camera(1))
@@ -251,6 +266,25 @@ class InputOverlay(QWidget):
         super().resizeEvent(event)
         self.refresh()
 
+    def nativeEvent(self, event_type, message):
+        # WM_MOUSEACTIVATE precedes activation. Checking isActiveWindow inside
+        # mousePressEvent is too late: the first returning click would deselect.
+        import ctypes
+        from ctypes import wintypes
+        native = wintypes.MSG.from_address(int(message))
+        if native.message == 0x0021:
+            self.activation_press = not self.host.app_is_foreground()
+        return super().nativeEvent(event_type, message)
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            # A control consumes its returning click. Do not retain that native
+            # activation snapshot for the next click on the video background.
+            self.activation_press = False
+            self.host.last_double = None
+            self.host.select_slot(self.index)
+        return super().eventFilter(watched, event)
+
     def arrange_controls(self):
         expanded = self.width() >= 310 and self.height() >= 150
         self.volume.setVisible(expanded)
@@ -292,7 +326,8 @@ class InputOverlay(QWidget):
         self.mute.setEnabled(bool(camera))
         self.volume.setEnabled(bool(camera))
         self.fullscreen.setIcon(icon('restore' if self.host.isFullScreen() else 'fullscreen'))
-        self.fullscreen.setToolTip('전체화면 해제 (F11)' if self.host.isFullScreen() else '전체화면 (F11)')
+        self.fullscreen.setToolTip('전체화면 해제 (F11)' if self.host.isFullScreen() else '이 화면 전체화면 (F11)')
+        self.fullscreen.setAccessibleName(self.fullscreen.toolTip())
         if camera:
             self.volume.blockSignals(True)
             self.volume.setValue(camera['volume'])
@@ -304,6 +339,8 @@ class InputOverlay(QWidget):
             self.show_status(self.host.tiles[self.index].status_text)
         else:
             self.show_status('우클릭으로 카메라 지정\n카메라 지정 / 새 카메라 등록')
+        if hasattr(self.host, 'chrome'):
+            self.host.position_screen_labels()
         self.update()
 
     def enterEvent(self, event):
@@ -374,27 +411,6 @@ class InputOverlay(QWidget):
         event.accept()
 
 
-    def nativeEvent(self, event_type, message):
-        # WM_MOUSEACTIVATE precedes activation. Checking isActiveWindow inside
-        # mousePressEvent is too late: the first returning click would deselect.
-        import ctypes
-        from ctypes import wintypes
-        native = wintypes.MSG.from_address(int(message))
-        if native.message == 0x0021:
-            self.activation_press = not self.host.app_is_foreground()
-        return super().nativeEvent(event_type, message)
-
-
-    def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.MouseButtonPress:
-            # A control consumes its returning click. Do not retain that native
-            # activation snapshot for the next click on the video background.
-            self.activation_press = False
-            self.host.last_double = None
-            self.host.select_slot(self.index)
-        return super().eventFilter(watched, event)
-
-
 class VideoLayout:
     """Geometry-only layout: enlarging a native video never reparents its HWND."""
     def __init__(self, host):
@@ -422,12 +438,15 @@ class PlayerWindow(QWidget):
         self.save_error_reported = False
         self.tiles = []
         self.setWindowTitle(APP_NAME)
+        self.setWindowIcon(app_icon())
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(300, 180)
         self.setStyleSheet('PlayerWindow{background:#080b10;}')
         self.grid = VideoLayout(self)
         for index in range(4):
             self.tiles.append(PlayerTile(self, index, instance))
+        self.chrome = AppChrome(self)
+        self.toast = LayoutToast(self)
         self.click_timer = QTimer(self)
         self.click_timer.setSingleShot(True)
         self.click_timer.timeout.connect(self.commit_deselect)
@@ -458,6 +477,8 @@ class PlayerWindow(QWidget):
             self.add_shortcut(key, callback)
         for count in (1, 2, 4):
             self.add_shortcut(str(count), lambda n=count: self.set_layout(n))
+        self.add_shortcut('Alt+A', self.chrome.reveal)
+        QApplication.instance().installEventFilter(self)
         self.refresh_layout()
 
     def add_shortcut(self, key, callback):
@@ -490,6 +511,56 @@ class PlayerWindow(QWidget):
         for tile in self.tiles:
             tile.overlay.update()
 
+    def position_screen_labels(self):
+        for tile in self.tiles:
+            overlay = tile.overlay
+            label_rect = QRect(overlay.mapToGlobal(QPoint(8, 8)), overlay.label.size())
+            overlap = self.chrome.isVisible() and self.chrome.geometry().intersects(label_rect)
+            overlay.label.move(8, 62 if overlap and overlay.height() >= 180 else 8)
+            overlay.label.setVisible(overlay.hovered and not (overlap and overlay.height() < 180))
+
+    app_is_foreground = staticmethod(app_is_foreground)
+
+    def cancel_pending_click(self):
+        self.click_timer.stop()
+        self.pending_deselect = None
+
+    def defer_deselect(self, index):
+        self.pending_deselect = index
+        self.click_timer.start(QApplication.doubleClickInterval())
+
+    def commit_deselect(self):
+        index = self.pending_deselect
+        self.pending_deselect = None
+        if index is not None and self.selected == index:
+            self.select_slot(None)
+
+    def record_double_click(self, index, position):
+        self.last_double = (index, QPoint(position), time.monotonic())
+
+    def consume_third_click(self, position):
+        previous, self.last_double = self.last_double, None
+        if previous is None:
+            return False
+        index, point, timestamp = previous
+        if (time.monotonic() - timestamp > QApplication.doubleClickInterval() / 1000
+                or (point - position).manhattanLength() > QApplication.startDragDistance()):
+            return False
+        self.cancel_pending_click()
+        self.select_slot(index)
+        if self.config['layout'] > 1:
+            if self.fullscreen_geometry is None:
+                self.toggle_fullscreen(index)
+            else:
+                self.single_view(index)
+        return True
+
+    def eventFilter(self, watched, event):
+        if (event.type() == QEvent.Type.KeyRelease and event.key() == Qt.Key.Key_Alt
+                and not self.modal_depth and not self.closing and self.app_is_foreground()):
+            self.chrome.reveal()
+        return super().eventFilter(watched, event)
+
     def persist(self):
         if not self.persist_enabled:
             return
@@ -500,7 +571,6 @@ class PlayerWindow(QWidget):
             self.save_error_reported = False
         except Exception:
             self.save_timer.stop()
-            self.click_timer.stop()
             if not self.save_error_reported:
                 self.save_error_reported = True
                 with self.modal():
@@ -524,6 +594,7 @@ class PlayerWindow(QWidget):
             tile.overlay.refresh()
         self.grid.activate()
         self.set_opacity(self.config['opacity'], save=False)
+        self.chrome.refresh()
         QTimer.singleShot(0, self.sync_overlays)
 
     def arrange_tiles(self):
@@ -552,6 +623,16 @@ class PlayerWindow(QWidget):
                     overlay.raise_()
             else:
                 overlay.hide()
+        if hasattr(self, 'chrome'):
+            if show:
+                self.chrome.position()
+                if self.chrome.isVisible():
+                    self.chrome.raise_()
+                self.toast.position()
+                self.position_screen_labels()
+            else:
+                self.chrome.hide()
+                self.toast.hide()
 
     def showEvent(self, event):
         super().showEvent(event)
@@ -561,6 +642,9 @@ class PlayerWindow(QWidget):
     def hideEvent(self, event):
         for tile in self.tiles:
             tile.overlay.hide()
+        if hasattr(self, 'chrome'):
+            self.chrome.hide()
+            self.toast.hide()
         super().hideEvent(event)
 
     def moveEvent(self, event):
@@ -589,6 +673,12 @@ class PlayerWindow(QWidget):
             self.closing = True
             self.status_timer.stop()
             self.save_timer.stop()
+            self.click_timer.stop()
+            self.chrome.timer.stop()
+            self.toast.timer.stop()
+            QApplication.instance().removeEventFilter(self)
+            self.chrome.close()
+            self.toast.close()
             for tile in self.tiles:
                 tile.release()
         if not all(tile.worker.done.is_set() for tile in self.tiles):
@@ -643,12 +733,17 @@ class PlayerWindow(QWidget):
     def set_layout(self, count):
         if count not in (1, 2, 4):
             raise ValueError('화면 구성은 1, 2, 4만 지원합니다.')
+        changed = self.config['layout'] != count
+        self.cancel_pending_click()
+        self.last_double = None
         if self.focused_screen is not None:
             self.restore_focus()
         self.config['layout'] = count
         self.config['slots'] = self.config['layout_slots'][str(count)]
         self.refresh_layout()
         self.queue_save()
+        if changed:
+            self.toast.notify(count)
 
     def set_always_on_top(self, enabled):
         # Preserve all VLC video HWNDs. Qt setWindowFlags would recreate them.
@@ -657,6 +752,10 @@ class PlayerWindow(QWidget):
             if index < self.config['layout'] and tile.overlay.isVisible():
                 set_topmost(tile.overlay, enabled)
         self.config['always_on_top'] = bool(enabled)
+        for widget in (self.chrome, self.toast):
+            if widget.isVisible():
+                set_topmost(widget, enabled)
+        self.chrome.refresh()
         self.queue_save()
 
     def set_opacity(self, value, save=True):
@@ -665,6 +764,8 @@ class PlayerWindow(QWidget):
         self.setWindowOpacity(alpha)
         for tile in self.tiles:
             tile.overlay.setWindowOpacity(alpha)
+        self.chrome.setWindowOpacity(alpha)
+        self.toast.setWindowOpacity(alpha)
         if save:
             self.queue_save()
 
@@ -849,6 +950,9 @@ class PlayerWindow(QWidget):
         else:
             self.toggle_fullscreen(index)
 
+    def toggle_layout_fullscreen(self):
+        self.toggle_fullscreen(None)
+
     def toggle_fullscreen(self, index=None):
         if self.fullscreen_geometry is not None:
             self.exit_fullscreen(restore_previous=True)
@@ -864,6 +968,7 @@ class PlayerWindow(QWidget):
         QTimer.singleShot(0, self.sync_overlays)
         for tile in self.tiles:
             tile.overlay.refresh()
+        self.chrome.refresh()
 
     def exit_fullscreen(self, restore_layout=False, restore_previous=False):
         if self.fullscreen_geometry is None:
@@ -884,6 +989,7 @@ class PlayerWindow(QWidget):
         self.sync_overlays()
         for tile in self.tiles:
             tile.overlay.refresh()
+        self.chrome.refresh()
         self.queue_save()
 
     def handle_escape(self):
@@ -906,16 +1012,22 @@ class PlayerWindow(QWidget):
         with self.modal():
             QMessageBox.information(self, f'CamFloat {VERSION} · 사용법',
                 '드래그: 창 이동 / 가장자리·모서리 드래그: 크기 조절\n'
-                '클릭: 화면 선택 / 우클릭: 선택한 영상 메뉴\n'
+                '클릭: 화면 선택 / 선택한 화면 재클릭: 선택 해제\n'
+                '다른 앱에서 돌아오는 첫 클릭은 선택 유지\n'
+                '우클릭: 영상 메뉴 / 상단 중앙에 마우스: 앱 도구\n'
                 '분할 화면 더블클릭: 연결을 유지한 채 SCREEN 확대·복원\n'
+                '트리플클릭: 해당 SCREEN 확대 + 전체화면\n'
                 '기본 1분할 더블클릭: 전체화면 켜기·끄기\n'
                 'Esc: 확대 전 분할 복원 → 전체화면 해제\n\n'
                 '← / →: 분할 확대 중에는 이전·다음 SCREEN\n'
-                '기본 1분할에서는 이전·다음 사용 중인 카메라\nF11: 전체화면 전환\n'
+                '기본 1분할에서는 이전·다음 사용 중인 카메라\n'
+                'F11: 선택 화면 전체화면 / 선택 없으면 분할 전체화면\n'
+                '전체화면에서 F11: 이전 창 상태 복원\nAlt / Alt+A: 앱 도구 표시\n'
                 '1 / 2 / 4: 화면 구성\nM: 선택 영상 음소거\nCtrl+Shift+M: 모든 카메라 음소거\n'
                 'Ctrl+R: 선택 영상 재연결\nCtrl+M: 카메라 관리\nCtrl+T: 항상 위 켜기·끄기\n'
                 'Ctrl+0: 투명도 0%로 복원\nF1: 이 도움말\n\n'
                 '단축키는 CamFloat가 활성화되어 있을 때 동작합니다.\n'
+                '선택이 없으면 M·Ctrl+R은 동작하지 않습니다.\n'
                 '첫 연결 실패는 수동 재시도만 가능합니다.\n'
                 '정상 재생 후 끊긴 경우에만 2~30초 간격으로 자동 재시도합니다.')
 
@@ -980,9 +1092,19 @@ class PlayerWindow(QWidget):
                 menu.addAction('이 화면만 크게 보기', lambda: self.single_view(index))
         if self.focused_screen is not None:
             menu.addAction('이전 분할로 복원 (Esc)', self.restore_focus)
-        menu.addAction('전체화면 해제 (F11)' if self.isFullScreen() else '전체화면 (F11)',
+        menu.addAction('전체화면 해제 (F11)' if self.isFullScreen() else '이 화면 전체화면',
                        lambda: self.toggle_fullscreen(index))
         menu.addSeparator()
+        menu.addMenu(self.build_app_menu(menu)).setIcon(icon('more'))
+        self.decorate_menu(menu)
+        return menu
+
+    def build_app_menu(self, parent=None):
+        menu = QMenu('앱 메뉴', parent or self)
+        menu.setStyleSheet(MENU_STYLE)
+        menu.addAction('CamFloat').setEnabled(False)
+        menu.addAction('전체화면 해제 (F11)' if self.isFullScreen() else '분할 전체화면',
+                       self.toggle_layout_fullscreen)
         layouts = menu.addMenu('전체 화면 구성')
         layout_group = QActionGroup(layouts)
         for count in (1, 2, 4):
@@ -1023,16 +1145,21 @@ class PlayerWindow(QWidget):
         menu.addAction('종료', self.close)
         menu.addSeparator()
         menu.addAction(f'CamFloat {VERSION}').setEnabled(False)
+        self.decorate_menu(menu)
+        return menu
+
+    @staticmethod
+    def decorate_menu(menu):
         symbols = {'이 화면의 카메라 지정': 'camera', '이 영상 화질': 'quality', '이 영상 음소거': 'muted',
             '이 영상 음량': 'volume', '이 영상 다시 연결': 'refresh', '이 화면만 크게 보기': 'fullscreen',
             '이전 분할로 복원 (Esc)': 'restore', '전체 화면 구성': 'grid', '항상 위에 표시': 'pin',
             '프로그램 전체 투명도': 'opacity', '하드웨어 가속': 'chip', '등록된 카메라 관리…': 'grid',
             '모든 카메라 음소거': 'muted', '사용법 / 단축키 (F1)': 'help', '최소화': 'minimize', '종료': 'close',
-            '전체화면 (F11)': 'fullscreen', '전체화면 해제 (F11)': 'restore'}
+            '이 화면 전체화면': 'fullscreen', '분할 전체화면': 'grid',
+            '전체화면 해제 (F11)': 'restore'}
         for action in menu.actions():
             if action.text() in symbols:
                 action.setIcon(icon(symbols[action.text()]))
-        return menu
 
     def set_hardware(self, enabled):
         self.config['hardware_acceleration'] = bool(enabled)
@@ -1043,51 +1170,6 @@ class PlayerWindow(QWidget):
         menu = self.build_context_menu(index, parent)
         menu.exec(point)
         menu.deleteLater()
-
-
-    app_is_foreground = staticmethod(app_is_foreground)
-
-    def cancel_pending_click(self):
-        self.click_timer.stop()
-        self.pending_deselect = None
-
-
-    def defer_deselect(self, index):
-        self.pending_deselect = index
-        self.click_timer.start(QApplication.doubleClickInterval())
-
-
-    def commit_deselect(self):
-        index = self.pending_deselect
-        self.pending_deselect = None
-        if index is not None and self.selected == index:
-            self.select_slot(None)
-
-
-    def record_double_click(self, index, position):
-        self.last_double = (index, QPoint(position), time.monotonic())
-
-
-    def consume_third_click(self, position):
-        previous, self.last_double = self.last_double, None
-        if previous is None:
-            return False
-        index, point, timestamp = previous
-        if (time.monotonic() - timestamp > QApplication.doubleClickInterval() / 1000
-                or (point - position).manhattanLength() > QApplication.startDragDistance()):
-            return False
-        self.cancel_pending_click()
-        self.select_slot(index)
-        if self.config['layout'] > 1:
-            if self.fullscreen_geometry is None:
-                self.toggle_fullscreen(index)
-            else:
-                self.single_view(index)
-        return True
-
-
-    def toggle_layout_fullscreen(self):
-        self.toggle_fullscreen(None)
 
 
 def exception_handler(kind, value, trace):
@@ -1110,9 +1192,11 @@ def demo_video_url(argument):
 
 
 def main():
+    configure_app_identity()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(VERSION)
+    app.setWindowIcon(app_icon())
     app.setQuitOnLastWindowClosed(True)
     sys.excepthook = exception_handler
     checking = '--self-check' in sys.argv
@@ -1189,8 +1273,11 @@ def main():
                 assert abs(window.windowOpacity() - .65) < .01
                 window.set_opacity(100)
                 assert crypt(crypt('roundtrip'), decrypt=True) == 'roundtrip'
+                taskbar = taskbar_icon_state(window)
+                assert taskbar['small'] and taskbar['large'] and not taskbar['tool_window'], taskbar
                 report.update(ok=True, layouts=[1, 2, 4], topmost=True, stable_video_handles=True,
-                              opacity=True, dpapi=True, vlc=True, sample_video_streams=video_streams)
+                              opacity=True, dpapi=True, vlc=True, sample_video_streams=video_streams,
+                              taskbar_icon=taskbar)
                 code = 0
             except Exception:
                 report['error'] = traceback.format_exc()

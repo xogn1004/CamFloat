@@ -28,8 +28,14 @@ class ViewUI(unittest.TestCase):
             self.assertIn('이 화면의 카메라 지정', actions)
             self.assertFalse(actions['이 화면의 카메라 지정'].icon().isNull())
             self.assertNotIn('이 카메라 수정…', actions)
-            for text in ('이 영상 다시 연결', '항상 위에 표시', '등록된 카메라 관리…', '전체 화면 구성'):
+            for text in ('이 영상 다시 연결',):
                 self.assertFalse(actions[text].icon().isNull())
+            app_menu = self.window.build_app_menu()
+            app_actions = {action.text(): action for action in app_menu.actions()}
+            for text in ('항상 위에 표시', '등록된 카메라 관리…', '전체 화면 구성'):
+                self.assertFalse(app_actions[text].icon().isNull())
+                self.assertNotIn(text, actions)
+            app_menu.deleteLater()
             menu.deleteLater()
 
     def test_real_single_doubleclick_fullscreen_roundtrip(self):
