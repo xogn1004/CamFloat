@@ -1,0 +1,4 @@
+PySide6==6.12.0
+python-vlc==3.0.21203
+PyInstaller==6.22.3
+Pillow==12.3.0
