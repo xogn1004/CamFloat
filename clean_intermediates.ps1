@@ -1,6 +1,6 @@
 $ErrorActionPreference = 'Stop'
 $cleanupRoot = [IO.Path]::GetFullPath($PSScriptRoot)
-$cleanupPrefix = $cleanupRoot.TrimEnd('\') + '\'
+$cleanupPrefix = $cleanupRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
 $cleanupReport = [Collections.Generic.List[string]]::new()
 function Remove-CamFloatIntermediate([string]$relativePath) {
     $cleanupTarget = [IO.Path]::GetFullPath((Join-Path $cleanupRoot $relativePath))
