@@ -298,6 +298,7 @@ class UIRegressions(unittest.TestCase):
                 second.release()
 
     def test_idle_controls_hide_and_return_without_losing_selection(self):
+        self.window.select_slot(0)
         overlay = self.window.tiles[0].overlay
         overlay.reveal_controls()
         self.assertFalse(overlay.label.isHidden())

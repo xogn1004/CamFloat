@@ -16,7 +16,7 @@ from camera_model import (APP_NAME, LOAD_WARNINGS, camera_url, crypt, data_path,
     ensure_camera_numbers, ensure_layout_slots, fill_empty_slots, load_config, make_vlc_instance,
     new_camera, redact, save_config, supports_quality)
 from dialogs import CameraManager
-from native_window import is_topmost, set_topmost
+from native_window import app_is_foreground, is_topmost, set_topmost
 from playback import PlaybackWorker
 from single_instance import InstanceGuard
 from icons import icon
@@ -120,6 +120,10 @@ class InputOverlay(QWidget):
         self.start_geometry = None
         self.edges = ()
         self.hovered = False
+        self.activation_press = False
+        self.click_candidate = False
+        self.dragged = False
+        self.multi_click = False
         self.label = QWidget(self)
         self.label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         label_box = QVBoxLayout(self.label)
@@ -162,6 +166,7 @@ class InputOverlay(QWidget):
                               'QToolButton:hover{background:rgba(102,158,235,70);}'
                               'QToolButton:pressed{background:rgba(102,158,235,110);}')
             item.clicked.connect(lambda: (self.host.select_slot(self.index), callback()))
+            item.installEventFilter(self)
             return item
         self.reload = button('refresh', '다시 연결 (Ctrl+R)', lambda: self.host.reconnect(self.index))
         self.choose = button('camera', '이 SCREEN의 카메라 지정', self.choose_camera)
@@ -171,6 +176,7 @@ class InputOverlay(QWidget):
         self.volume.setFixedWidth(82)
         self.volume.setToolTip('이 영상 음량')
         self.volume.setAccessibleName('이 영상 음량')
+        self.volume.installEventFilter(self)
         self.volume.valueChanged.connect(lambda value: self.host.set_volume(self.index, value))
         self.value = QLabel('100')
         self.value.setFixedWidth(25)
@@ -313,13 +319,24 @@ class InputOverlay(QWidget):
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
-        self.host.select_slot(self.index)
+        self.click_candidate = False
+        self.dragged = False
+        self.multi_click = False
         if event.button() == Qt.MouseButton.RightButton:
+            self.host.select_slot(self.index)
             self.host.show_context_menu(self.index, event.globalPosition().toPoint(), self)
-        elif event.button() == Qt.MouseButton.LeftButton and not self.host.isFullScreen():
+        elif event.button() == Qt.MouseButton.LeftButton:
+            returning = self.activation_press or not self.host.app_is_foreground()
+            self.activation_press = False
+            self.multi_click = self.host.consume_third_click(event.globalPosition().toPoint())
+            if not self.multi_click:
+                self.click_candidate = self.host.selected == self.index and not returning
+                self.host.select_slot(self.index)
             self.origin = event.globalPosition().toPoint()
             self.start_geometry = QRect(self.host.geometry())
             self.edges = self.host.edges_at(self.origin)
+            if self.edges:
+                self.click_candidate = False
         event.accept()
 
     def mouseMoveEvent(self, event):
@@ -327,12 +344,18 @@ class InputOverlay(QWidget):
         point = event.globalPosition().toPoint()
         if self.origin is not None and event.buttons() & Qt.MouseButton.LeftButton:
             if (point - self.origin).manhattanLength() >= 3:
+                self.dragged = True
+                self.click_candidate = False
+                self.host.cancel_pending_click()
                 self.host.drag_geometry(self.start_geometry, point - self.origin, self.edges)
         else:
             self.setCursor(self.host.resize_cursor(self.host.edges_at(point)))
         event.accept()
 
     def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self.click_candidate and not self.dragged and not self.multi_click:
+            self.host.defer_deselect(self.index)
+        self.click_candidate = False
         if self.origin is not None:
             self.host.queue_save()
         self.origin = None
@@ -342,8 +365,34 @@ class InputOverlay(QWidget):
     def mouseDoubleClickEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and not self.host.edges_at(event.globalPosition().toPoint()):
             self.origin = None
+            self.click_candidate = False
+            self.multi_click = True
+            self.host.cancel_pending_click()
+            self.host.select_slot(self.index)
+            self.host.record_double_click(self.index, event.globalPosition().toPoint())
             self.host.toggle_focus(self.index)
         event.accept()
+
+
+    def nativeEvent(self, event_type, message):
+        # WM_MOUSEACTIVATE precedes activation. Checking isActiveWindow inside
+        # mousePressEvent is too late: the first returning click would deselect.
+        import ctypes
+        from ctypes import wintypes
+        native = wintypes.MSG.from_address(int(message))
+        if native.message == 0x0021:
+            self.activation_press = not self.host.app_is_foreground()
+        return super().nativeEvent(event_type, message)
+
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            # A control consumes its returning click. Do not retain that native
+            # activation snapshot for the next click on the video background.
+            self.activation_press = False
+            self.host.last_double = None
+            self.host.select_slot(self.index)
+        return super().eventFilter(watched, event)
 
 
 class VideoLayout:
@@ -361,11 +410,15 @@ class PlayerWindow(QWidget):
         super().__init__()
         self.config, self.instance, self.persist_enabled = config, instance, persist
         ensure_layout_slots(self.config)
-        self.selected = 0
+        self.selected = None
+        self.pending_deselect = None
+        self.last_double = None
         self.modal_depth = 0
         self.closing = False
         self.focused_screen = None
         self.fullscreen_geometry = None
+        self.fullscreen_previous_focus = None
+        self.fullscreen_entry_layout = None
         self.save_error_reported = False
         self.tiles = []
         self.setWindowTitle(APP_NAME)
@@ -375,6 +428,9 @@ class PlayerWindow(QWidget):
         self.grid = VideoLayout(self)
         for index in range(4):
             self.tiles.append(PlayerTile(self, index, instance))
+        self.click_timer = QTimer(self)
+        self.click_timer.setSingleShot(True)
+        self.click_timer.timeout.connect(self.commit_deselect)
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(350)
@@ -420,6 +476,8 @@ class PlayerWindow(QWidget):
                          max(area.top(), min(self.y(), area.bottom() - height + 1)), width, height)
 
     def camera_for_slot(self, index):
+        if index is None or not 0 <= index < self.config['layout']:
+            return None
         identifier = self.config['slots'][index]
         return next((c for c in self.config['cameras'] if c['id'] == identifier and c.get('enabled', True)), None)
 
@@ -427,6 +485,7 @@ class PlayerWindow(QWidget):
         return f'SCREEN {index + 1}'
 
     def select_slot(self, index):
+        self.cancel_pending_click()
         self.selected = index
         for tile in self.tiles:
             tile.overlay.update()
@@ -441,6 +500,7 @@ class PlayerWindow(QWidget):
             self.save_error_reported = False
         except Exception:
             self.save_timer.stop()
+            self.click_timer.stop()
             if not self.save_error_reported:
                 self.save_error_reported = True
                 with self.modal():
@@ -452,7 +512,8 @@ class PlayerWindow(QWidget):
 
     def refresh_layout(self):
         count = self.config['layout']
-        self.selected = min(self.selected, count - 1)
+        if self.selected is not None and self.selected >= count:
+            self.select_slot(None)
         for index, tile in enumerate(self.tiles):
             if index < count:
                 tile.show()
@@ -754,7 +815,7 @@ class PlayerWindow(QWidget):
         if self.config['layout'] == 1 or not 0 <= index < self.config['layout']:
             return
         self.focused_screen = index
-        self.selected = index
+        self.select_slot(index)
         self.grid.activate()
         for tile in self.tiles:
             tile.overlay.refresh()
@@ -788,26 +849,36 @@ class PlayerWindow(QWidget):
         else:
             self.toggle_fullscreen(index)
 
-    def toggle_fullscreen(self, index):
+    def toggle_fullscreen(self, index=None):
         if self.fullscreen_geometry is not None:
-            self.exit_fullscreen(restore_layout=True)
+            self.exit_fullscreen(restore_previous=True)
             return
         self.fullscreen_geometry = QRect(self.geometry())
-        if self.config['layout'] > 1:
+        self.fullscreen_previous_focus = self.focused_screen
+        self.fullscreen_entry_layout = self.config['layout']
+        if index is not None and self.config['layout'] > 1:
             self.single_view(index)
+        else:
+            self.restore_focus()
         self.showFullScreen()
         QTimer.singleShot(0, self.sync_overlays)
         for tile in self.tiles:
             tile.overlay.refresh()
 
-    def exit_fullscreen(self, restore_layout=False):
+    def exit_fullscreen(self, restore_layout=False, restore_previous=False):
         if self.fullscreen_geometry is None:
             return
         geometry = QRect(self.fullscreen_geometry)
-        if restore_layout:
+        previous = self.fullscreen_previous_focus
+        if restore_layout or restore_previous:
             self.restore_focus()
+        if (restore_previous and previous is not None and self.config['layout'] == self.fullscreen_entry_layout
+                and previous < self.config['layout']):
+            self.single_view(previous)
         self.showNormal()
         self.fullscreen_geometry = None
+        self.fullscreen_previous_focus = None
+        self.fullscreen_entry_layout = None
         self.setGeometry(geometry)
         self.grid.activate()
         self.sync_overlays()
@@ -972,6 +1043,51 @@ class PlayerWindow(QWidget):
         menu = self.build_context_menu(index, parent)
         menu.exec(point)
         menu.deleteLater()
+
+
+    app_is_foreground = staticmethod(app_is_foreground)
+
+    def cancel_pending_click(self):
+        self.click_timer.stop()
+        self.pending_deselect = None
+
+
+    def defer_deselect(self, index):
+        self.pending_deselect = index
+        self.click_timer.start(QApplication.doubleClickInterval())
+
+
+    def commit_deselect(self):
+        index = self.pending_deselect
+        self.pending_deselect = None
+        if index is not None and self.selected == index:
+            self.select_slot(None)
+
+
+    def record_double_click(self, index, position):
+        self.last_double = (index, QPoint(position), time.monotonic())
+
+
+    def consume_third_click(self, position):
+        previous, self.last_double = self.last_double, None
+        if previous is None:
+            return False
+        index, point, timestamp = previous
+        if (time.monotonic() - timestamp > QApplication.doubleClickInterval() / 1000
+                or (point - position).manhattanLength() > QApplication.startDragDistance()):
+            return False
+        self.cancel_pending_click()
+        self.select_slot(index)
+        if self.config['layout'] > 1:
+            if self.fullscreen_geometry is None:
+                self.toggle_fullscreen(index)
+            else:
+                self.single_view(index)
+        return True
+
+
+    def toggle_layout_fullscreen(self):
+        self.toggle_fullscreen(None)
 
 
 def exception_handler(kind, value, trace):
