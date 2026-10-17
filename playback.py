@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import threading
+from playback_profiles import media_options
 
 
 class PlaybackWorker:
-    def __init__(self, instance, player, hwnd=None):
+    def __init__(self, instance, player, hwnd=None, profile='auto'):
         self.instance, self.player = instance, player
         self.condition = threading.Condition()
         self.pending = None
         self.pending_reset = False
         self.hwnd = hwnd
+        self.profile = profile
+        self.phase = 'idle'
+        self.last_error = None
         self.revision = 0
         self.handled = 0
         self.closing = False
@@ -54,6 +58,7 @@ class PlaybackWorker:
                     reset = self.pending_reset
                 try:
                     if active:
+                        self.phase = 'stopping'
                         self.player.stop()
                         active = False
                     with self.condition:
@@ -63,7 +68,9 @@ class PlaybackWorker:
                     if closing:
                         break
                     self.error = False
+                    self.last_error = None
                     if request:
+                        self.phase = 'opening'
                         if reset and self.hwnd is not None:
                             # A fresh decoder/output also repairs a wedged vout.
                             replacement = self.instance.media_player_new()
@@ -84,11 +91,13 @@ class PlaybackWorker:
                             media.add_option(':network-caching=450')
                             if url.startswith('file:'):
                                 media.add_option(':input-repeat=65535')
-                            media.add_option(':avcodec-hw=any' if hardware else ':avcodec-hw=none')
+                            for option in media_options(self.profile, hardware):
+                                media.add_option(option)
                             self.player.set_media(media)
                         finally:
                             media.release()
                         active = True
+                        self.phase = 'starting'
                         if self.player.play() == -1:
                             self.error = True
                         # No pause feature is exposed by CamFloat. Never carry
@@ -102,8 +111,13 @@ class PlaybackWorker:
                             volume, muted = self.audio
                             self.player.audio_set_volume(volume)
                             self.player.audio_set_mute(muted)
-                except Exception:
+                        self.phase = 'playing'
+                    else:
+                        self.phase = 'idle'
+                except Exception as error:
                     self.error = True
+                    self.last_error = type(error).__name__
+                    self.phase = 'error'
                 finally:
                     with self.condition:
                         self.handled = revision
@@ -111,6 +125,8 @@ class PlaybackWorker:
         finally:
             # HWNDs are kept alive by PlayerWindow until every worker finishes.
             try:
+                self.phase = 'releasing'
                 self.player.release()
             finally:
+                self.phase = 'closed'
                 self.done.set()

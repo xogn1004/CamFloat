@@ -18,13 +18,15 @@ from camera_model import (APP_NAME, LOAD_WARNINGS, camera_url, crypt, data_path,
 from dialogs import CameraManager
 from native_window import app_is_foreground, configure_app_identity, is_topmost, set_topmost, taskbar_icon_state
 from playback import PlaybackWorker
+from playback_profiles import PROFILES, instance_options, select_profile
+from playback_diagnostics import PlaybackDiagnostics
 from single_instance import InstanceGuard
 from icons import icon
 from chrome import AppChrome, LayoutToast
 from menu_labels import CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, menu_text, tooltip
 from menu_widgets import switch_action
 
-VERSION = '0.7.0'
+VERSION = '0.7.1'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -50,7 +52,7 @@ class PlayerTile(QWidget):
         player.video_set_mouse_input(False)
         player.video_set_key_input(False)
         self.current_key = None
-        self.worker = PlaybackWorker(instance, player, hwnd=int(self.winId()))
+        self.worker = PlaybackWorker(instance, player, hwnd=int(self.winId()), profile=host.playback_profile)
         self.attempt_started = 0
         self.retry_at = None
         self.retry_count = 0
@@ -121,16 +123,24 @@ class PlayerTile(QWidget):
         self.ever_played = False
         self.initial_failed = False
 
-    def displayed_frames(self):
+    def media_statistics(self):
         import vlc
         media = self.player.get_media()
         if media is None:
             return None
         try:
             stats = vlc.MediaStats()
-            return stats.displayed_pictures if media.get_stats(stats) else None
+            if not media.get_stats(stats):
+                return None
+            return {name: getattr(stats, name) for name in (
+                'read_bytes', 'demux_read_bytes', 'demux_corrupted', 'demux_discontinuity',
+                'decoded_video', 'decoded_audio', 'displayed_pictures', 'lost_pictures', 'played_abuffers')}
         finally:
             media.release()
+
+    def displayed_frames(self):
+        stats = self.media_statistics()
+        return stats['displayed_pictures'] if stats else None
 
     def frames_stalled(self, now):
         count = self.displayed_frames()
@@ -453,6 +463,7 @@ class PlayerWindow(QWidget):
     def __init__(self, config, instance, persist=True):
         super().__init__()
         self.config, self.instance, self.persist_enabled = config, instance, persist
+        self.playback_profile = QApplication.instance().property('playback_profile') or 'auto'
         QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeMenu, False)
         QApplication.setEffectEnabled(Qt.UIEffect.UI_AnimateMenu, False)
         ensure_layout_slots(self.config)
@@ -466,7 +477,8 @@ class PlayerWindow(QWidget):
         self.fullscreen_entry_layout = None
         self.save_error_reported = False
         self.tiles = []
-        self.setWindowTitle(APP_NAME)
+        self.setWindowTitle('CamFloat — RTSP Stream Viewer' + (
+            f' · {PROFILES[self.playback_profile]}' if self.playback_profile != 'auto' else ''))
         self.setWindowIcon(app_icon())
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint)
         self.setMinimumSize(300, 180)
@@ -1181,14 +1193,19 @@ class PlayerWindow(QWidget):
         action.setDefaultWidget(widget)
         opacity_menu.addAction(action)
         opacity_menu.addAction(menu_text('불투명하게 복원', 'Ctrl+0'), lambda: self.set_opacity(100))
-        switch_action(menu, '하드웨어 가속', self.config['hardware_acceleration'], self.set_hardware)
+        hardware = switch_action(menu, '하드웨어 가속',
+            self.config['hardware_acceleration'] and self.playback_profile != 'cpu', self.set_hardware)
+        if self.playback_profile == 'cpu':
+            hardware.setEnabled(False)
+            hardware.setToolTip('CPU 출력 모드에서는 하드웨어 가속을 사용하지 않습니다.')
         menu.addSeparator()
         menu.addAction(icon('muted'), menu_text('모든 카메라 음소거', 'Ctrl+Shift+M'), self.mute_all)
         menu.addAction(icon('help'), menu_text('사용법 / 단축키', 'F1'), self.show_help)
         menu.addAction(icon('minimize'), '최소화', self.showMinimized)
         menu.addAction(icon('close'), menu_text('종료', 'Alt+F4'), self.close)
         menu.addSeparator()
-        menu.addAction(f'CamFloat {VERSION}').setEnabled(False)
+        suffix = f' · {PROFILES[self.playback_profile]}' if self.playback_profile != 'auto' else ''
+        menu.addAction(f'CamFloat {VERSION}{suffix}').setEnabled(False)
         return menu
 
     def set_hardware(self, enabled):
@@ -1227,6 +1244,12 @@ def main():
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(VERSION)
     app.setWindowIcon(app_icon())
+    try:
+        profile = select_profile(sys.argv[1:], sys.executable)
+    except ValueError as error:
+        QMessageBox.critical(None, APP_NAME, str(error))
+        return 1
+    app.setProperty('playback_profile', profile)
     app.setQuitOnLastWindowClosed(True)
     sys.excepthook = exception_handler
     checking = '--self-check' in sys.argv
@@ -1235,13 +1258,16 @@ def main():
     if not checking and not demo:
         guard = InstanceGuard()
         if not guard.acquire():
+            if profile != 'auto':
+                QMessageBox.information(None, APP_NAME,
+                    'CamFloat가 이미 실행 중입니다.\n기존 CamFloat를 종료한 뒤 이 호환 모드를 다시 실행하세요.')
             return 0
     folder = find_vlc_directory()
     if folder is None:
         QMessageBox.critical(None, APP_NAME, 'VLC media player를 설치한 뒤 다시 실행하세요.')
         return 1
     try:
-        instance = make_vlc_instance(folder)
+        instance = make_vlc_instance(folder, *instance_options(profile))
         if instance is None:
             raise RuntimeError('VLC 초기화 실패')
     except (OSError, RuntimeError, NameError):
@@ -1272,6 +1298,18 @@ def main():
         for camera in config['cameras']:
             camera['muted'] = True
     window = PlayerWindow(config, instance, persist=not (checking or demo))
+    diagnostics = None
+    if not checking and not demo:
+        try:
+            import vlc
+            diagnostics = PlaybackDiagnostics(profile, VERSION, vlc.libvlc_get_version().decode('utf-8', 'replace'))
+            diagnostic_timer = QTimer(window)
+            diagnostic_timer.setInterval(2000)
+            diagnostic_timer.timeout.connect(lambda: diagnostics.sample(window))
+            diagnostic_timer.start()
+        except OSError:
+            # A read-only profile must not prevent camera playback.
+            pass
     if guard:
         guard.activated.connect(window.activate)
     window.show()
@@ -1324,6 +1362,8 @@ def main():
     elif not config['cameras']:
         QTimer.singleShot(300, window.manage_cameras)
     code = app.exec()
+    if diagnostics:
+        diagnostics.close()
     for tile in window.tiles:
         tile.worker.done.wait(5)
     if all(tile.worker.done.is_set() for tile in window.tiles):
