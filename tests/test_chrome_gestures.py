@@ -163,57 +163,6 @@ class ChromeGestures(unittest.TestCase):
             self.assertFalse(self.window.chrome.isVisible())
             self.assertFalse(self.window.toast.isVisible())
 
-    def test_video_centre_does_not_reveal_screen_controls(self):
-        self.window.set_layout(4)
-        self.app.processEvents()
-        overlay = self.window.tiles[0].overlay
-        overlay.update_hover_controls(overlay.rect().center())
-        self.assertTrue(overlay.bar.isHidden())
-        self.assertTrue(overlay.label.isHidden())
-        self.assertTrue(overlay.previous.isHidden())
-        overlay.update_hover_controls(overlay.bar.geometry().center())
-        self.assertFalse(overlay.bar.isHidden())
-        self.assertTrue(overlay.label.isHidden())
-        overlay.update_hover_controls(QPoint(20, 20))
-        self.assertFalse(overlay.label.isHidden())
-        self.assertTrue(overlay.bar.isHidden())
-        self.window.single_view(0)
-        overlay.update_hover_controls(overlay.previous.geometry().center())
-        self.assertFalse(overlay.previous.isHidden())
-        self.assertTrue(overlay.bar.isHidden())
-        self.assertTrue(overlay.label.isHidden())
-
-    def test_app_toolbar_requires_edge_dwell_and_never_opens_during_drag(self):
-        chrome = self.window.chrome
-        chrome.hide()
-        centre = self.window.mapToGlobal(self.window.rect().center())
-        edge = self.window.mapToGlobal(QPoint(self.window.width() // 2, 3))
-        with patch('chrome.QCursor.pos', return_value=centre) as position, \
-                patch('chrome.time.monotonic', return_value=100) as clock, \
-                patch('chrome.QApplication.mouseButtons', return_value=Qt.MouseButton.NoButton) as buttons:
-            chrome.poll()
-            self.assertFalse(chrome.isVisible())
-            position.return_value = edge
-            chrome.poll()
-            self.assertFalse(chrome.isVisible())
-            clock.return_value = 100.1
-            chrome.poll()
-            self.assertFalse(chrome.isVisible())
-            clock.return_value = 100.31
-            chrome.poll()
-            self.assertTrue(chrome.isVisible())
-            position.return_value = centre
-            clock.return_value = 101
-            chrome.poll()
-            self.assertFalse(chrome.isVisible())
-            position.return_value = edge
-            buttons.return_value = Qt.MouseButton.LeftButton
-            clock.return_value = 102
-            chrome.poll()
-            clock.return_value = 104
-            chrome.poll()
-            self.assertFalse(chrome.isVisible())
-
 
 if __name__ == '__main__':
     unittest.main(verbosity=2)

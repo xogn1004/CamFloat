@@ -130,8 +130,6 @@ class InputOverlay(QWidget):
         self.start_geometry = None
         self.edges = ()
         self.hovered = False
-        self.bar_revealed = False
-        self.navigation_hovered = False
         self.activation_press = False
         self.click_candidate = False
         self.dragged = False
@@ -149,7 +147,7 @@ class InputOverlay(QWidget):
             badge.setStyleSheet('background:rgba(12,18,28,218);color:#e8f1ff;'
                                 'font-size:10px;font-weight:600;padding:3px 6px;border-radius:4px;')
             badges.addWidget(badge)
-        self.quality_badge.setStyleSheet('background:rgba(40,56,76,210);color:#cbdcf2;'
+        self.quality_badge.setStyleSheet('background:rgba(43,105,174,220);color:#e9f4ff;'
                                         'font-size:10px;font-weight:600;padding:3px 6px;border-radius:4px;')
         badges.addStretch()
         label_box.addLayout(badges)
@@ -164,8 +162,8 @@ class InputOverlay(QWidget):
         self.empty.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.bar = QWidget(self)
         self.bar.setObjectName('screenBar')
-        self.bar.setStyleSheet('QWidget#screenBar{background:rgba(17,21,28,220);border-radius:8px;'
-            'border:1px solid rgba(174,194,223,25);color:#c5d1e2;}'
+        self.bar.setStyleSheet('QWidget#screenBar{background:rgba(19,24,33,235);border-radius:10px;'
+            'border:1px solid rgba(174,194,223,35);color:#dce8f8;}'
             'QSlider::groove:horizontal{height:3px;background:#3b485c;border-radius:1px;}'
             'QSlider::sub-page:horizontal{background:#8dbbfa;}'
             'QSlider::handle:horizontal{background:#d4e6ff;width:9px;margin:-3px 0;border-radius:4px;}')
@@ -218,39 +216,23 @@ class InputOverlay(QWidget):
         self.following.hide()
         self.idle_timer = QTimer(self)
         self.idle_timer.setSingleShot(True)
-        self.idle_timer.setInterval(1200)
+        self.idle_timer.setInterval(2500)
         self.idle_timer.timeout.connect(self.hide_idle_controls)
 
-    def reveal_controls(self, section='all'):
-        self.hovered = section in ('all', 'info')
-        self.bar_revealed = section in ('all', 'bar')
-        self.navigation_hovered = section in ('all', 'navigation')
+    def reveal_controls(self):
+        self.hovered = True
         self.refresh()
         self.idle_timer.start()
-
-    def update_hover_controls(self, point):
-        if self.bar.geometry().adjusted(-7, -8, 7, 8).contains(point):
-            self.reveal_controls('bar')
-        elif QRect(8, 8, min(190, self.width() - 16), 50).contains(point):
-            self.reveal_controls('info')
-        elif any(button.geometry().adjusted(-4, -8, 4, 8).contains(point)
-                 for button in (self.previous, self.following)):
-            self.reveal_controls('navigation')
-        else:
-            self.hide_controls()
-
-    def hide_controls(self):
-        self.hovered = self.bar_revealed = self.navigation_hovered = False
-        self.label.hide()
-        self.bar.hide()
-        self.previous.hide()
-        self.following.hide()
 
     def hide_idle_controls(self):
         if self.bar.underMouse() or self.previous.underMouse() or self.following.underMouse() or self.volume.isSliderDown():
             self.idle_timer.start()
             return
-        self.hide_controls()
+        self.hovered = False
+        self.label.hide()
+        self.bar.hide()
+        self.previous.hide()
+        self.following.hide()
 
     def choose_camera(self):
         self.host.select_slot(self.index)
@@ -259,7 +241,7 @@ class InputOverlay(QWidget):
         self.host.populate_camera_menu(menu, self.index)
         menu.exec(self.choose.mapToGlobal(QPoint(0, 0)) - QPoint(0, menu.sizeHint().height()))
         menu.deleteLater()
-        self.reveal_controls('bar')
+        self.reveal_controls()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -308,7 +290,7 @@ class InputOverlay(QWidget):
         self.volume.setVisible(expanded)
         self.value.setVisible(expanded)
         width = 232 if expanded else 128
-        self.bar.setGeometry(max(5, self.width() - width - 8), max(4, self.height() - 38), width, 32)
+        self.bar.setGeometry(max(5, self.width() - width - 8), max(4, self.height() - 40), width, 32)
         self.previous.move(10, max(48, (self.height() - 40) // 2))
         self.following.move(max(10, self.width() - 42), max(48, (self.height() - 40) // 2))
 
@@ -330,9 +312,9 @@ class InputOverlay(QWidget):
         self.label.adjustSize()
         self.label.setVisible(self.hovered)
         self.arrange_controls()
-        self.bar.setVisible(self.bar_revealed)
+        self.bar.setVisible(self.hovered)
         enlarged = self.host.focused_screen is not None
-        navigation = self.navigation_hovered and (enlarged or (self.host.config['layout'] == 1 and
+        navigation = self.hovered and (enlarged or (self.host.config['layout'] == 1 and
             sum(c.get('enabled', True) for c in self.host.config['cameras']) > 1))
         self.previous.setVisible(navigation)
         self.following.setVisible(navigation)
@@ -362,11 +344,15 @@ class InputOverlay(QWidget):
         self.update()
 
     def enterEvent(self, event):
-        self.update_hover_controls(event.position().toPoint())
+        self.reveal_controls()
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self.hide_controls()
+        self.hovered = False
+        self.label.hide()
+        self.bar.hide()
+        self.previous.hide()
+        self.following.hide()
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
@@ -391,16 +377,15 @@ class InputOverlay(QWidget):
         event.accept()
 
     def mouseMoveEvent(self, event):
+        self.reveal_controls()
         point = event.globalPosition().toPoint()
         if self.origin is not None and event.buttons() & Qt.MouseButton.LeftButton:
-            self.hide_controls()
             if (point - self.origin).manhattanLength() >= 3:
                 self.dragged = True
                 self.click_candidate = False
                 self.host.cancel_pending_click()
                 self.host.drag_geometry(self.start_geometry, point - self.origin, self.edges)
         else:
-            self.update_hover_controls(event.position().toPoint())
             self.setCursor(self.host.resize_cursor(self.host.edges_at(point)))
         event.accept()
 
@@ -531,7 +516,7 @@ class PlayerWindow(QWidget):
             overlay = tile.overlay
             label_rect = QRect(overlay.mapToGlobal(QPoint(8, 8)), overlay.label.size())
             overlap = self.chrome.isVisible() and self.chrome.geometry().intersects(label_rect)
-            overlay.label.move(8, 50 if overlap and overlay.height() >= 180 else 8)
+            overlay.label.move(8, 62 if overlap and overlay.height() >= 180 else 8)
             overlay.label.setVisible(overlay.hovered and not (overlap and overlay.height() < 180))
 
     app_is_foreground = staticmethod(app_is_foreground)
@@ -832,7 +817,7 @@ class PlayerWindow(QWidget):
     def cycle_camera(self, direction):
         if self.focused_screen is not None:
             self.single_view((self.focused_screen + direction) % self.config['layout'])
-            self.tiles[self.focused_screen].overlay.reveal_controls('info')
+            self.tiles[self.focused_screen].overlay.reveal_controls()
             return
         cameras = [c for c in self.config['cameras'] if c.get('enabled', True)]
         if self.config['layout'] != 1 or len(cameras) < 2:
@@ -841,7 +826,7 @@ class PlayerWindow(QWidget):
         current = self.config['slots'][0]
         position = identifiers.index(current) if current in identifiers else (-1 if direction > 0 else 0)
         self.assign_camera(0, identifiers[(position + direction) % len(identifiers)], keep_focus=True)
-        self.tiles[0].overlay.reveal_controls('info')
+        self.tiles[0].overlay.reveal_controls()
 
     @contextmanager
     def modal(self):
@@ -1029,7 +1014,7 @@ class PlayerWindow(QWidget):
                 '드래그: 창 이동 / 가장자리·모서리 드래그: 크기 조절\n'
                 '클릭: 화면 선택 / 선택한 화면 재클릭: 선택 해제\n'
                 '다른 앱에서 돌아오는 첫 클릭은 선택 유지\n'
-                '우클릭: 영상 메뉴 / 상단 중앙 가장자리에 잠시 머물기: 앱 도구\n'
+                '우클릭: 영상 메뉴 / 상단 중앙에 마우스: 앱 도구\n'
                 '분할 화면 더블클릭: 연결을 유지한 채 SCREEN 확대·복원\n'
                 '트리플클릭: 해당 SCREEN 확대 + 전체화면\n'
                 '기본 1분할 더블클릭: 전체화면 켜기·끄기\n'

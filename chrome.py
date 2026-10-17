@@ -3,15 +3,15 @@ import time
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer
 from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QLabel, QToolButton, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QWidget
 
 from icons import icon
 from native_window import set_topmost
 
 
-PANEL_STYLE = '''QFrame#panel{background:rgba(17,21,28,220);border:1px solid rgba(174,194,223,25);
-border-radius:9px;} QToolButton{color:#aeb9c9;background:transparent;border:0;
-border-radius:5px;font-family:Segoe UI;font-size:11px;font-weight:500;}
+PANEL_STYLE = '''QFrame#panel{background:rgba(19,24,33,242);border:1px solid rgba(174,194,223,42);
+border-radius:12px;} QToolButton{color:#aebcd0;background:transparent;border:0;
+border-radius:7px;font-family:Segoe UI;font-size:11px;font-weight:600;}
 QToolButton:hover{background:rgba(153,182,223,30);color:#f2f6ff;}
 QToolButton:pressed{background:rgba(153,182,223,50);}
 QToolButton:checked{color:#cce2ff;background:rgba(106,163,239,43);}
@@ -53,7 +53,6 @@ class AppChrome(QWidget):
         self.manager = self.button(row, 'camera', '카메라 관리 (Ctrl+M)', host.manage_cameras)
         self.more = self.button(row, 'more', '앱 메뉴 (Alt)', self.show_menu)
         self.deadline = 0
-        self.edge_since = None
         self.menu_open = False
         self.timer = QTimer(self)
         self.timer.setInterval(100)
@@ -81,14 +80,14 @@ class AppChrome(QWidget):
         self.fullscreen.setAccessibleName(self.fullscreen.toolTip())
 
     def position(self):
-        self.move(self.host.mapToGlobal(QPoint((self.host.width() - self.width()) // 2, 8)))
+        self.move(self.host.mapToGlobal(QPoint((self.host.width() - self.width()) // 2, 10)))
 
-    def reveal(self, linger=1.2):
+    def reveal(self):
         if self.host.modal_depth or self.host.closing or self.host.isMinimized() or not self.host.isVisible():
             return
         self.position()
         self.refresh()
-        self.deadline = time.monotonic() + linger
+        self.deadline = time.monotonic() + 2.2
         if not self.isVisible():
             self.show()
             set_topmost(self, self.host.config['always_on_top'])
@@ -100,23 +99,13 @@ class AppChrome(QWidget):
             self.hide()
             self.host.position_screen_labels()
             return
-        # Crossing the video must never summon a toolbar. Require a short dwell
-        # on the top edge; dragging/resizing must not reveal it either.
+        # No invisible window covers the video. Only the narrow top-centre zone
+        # reveals controls; keep them while crossing from video to the toolbar.
         point = self.host.mapFromGlobal(QCursor.pos())
-        edge = QRect((self.host.width() - self.width()) // 2, 0, self.width(), 8)
-        active = self.host.config['always_on_top'] or self.host.app_is_foreground()
-        dragging = QApplication.mouseButtons() != Qt.MouseButton.NoButton
-        now = time.monotonic()
-        if active and not dragging and edge.contains(point):
-            if self.edge_since is None:
-                self.edge_since = now
-            if now - self.edge_since >= .28:
-                self.reveal(linger=.45)
-        else:
-            self.edge_since = None
-        if self.isVisible() and self.geometry().adjusted(-6, -8, 6, 6).contains(QCursor.pos()):
-            self.deadline = now + .45
-        if self.isVisible() and not self.menu_open and now > self.deadline:
+        zone = QRect((self.host.width() - self.width()) // 2 - 8, 10, self.width() + 16, 48)
+        if zone.contains(point) and (self.host.config['always_on_top'] or self.host.app_is_foreground()):
+            self.reveal()
+        elif self.isVisible() and not self.menu_open and time.monotonic() > self.deadline:
             self.hide()
             self.host.position_screen_labels()
 
