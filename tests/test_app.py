@@ -121,7 +121,7 @@ class WindowTests(unittest.TestCase):
                 menu = self.window.build_context_menu(index)
                 self.assertIn(self.window.camera_for_slot(index)['name'], menu.actions()[0].text())
                 self.assertTrue(any(a.text() == '이 영상 음량' for a in menu.actions()))
-                self.assertEqual(any(a.text() == '이 화면만 크게 보기' for a in menu.actions()), count > 1)
+                self.assertEqual(any(a.text().split('\t')[0] == '이 화면만 크게 보기' for a in menu.actions()), count > 1)
                 menu.deleteLater()
         second = copy.deepcopy(self.window.camera_for_slot(1))
         self.window.set_volume(0, 31)

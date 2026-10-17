@@ -31,6 +31,7 @@ initial = folder / 'initial-failure-qa.json'
 if initial.exists():
     manifest['initial_connection_check'] = json.loads(initial.read_text(encoding='utf-8'))
 for relative in ('main.py', 'chrome.py', 'camera_model.py', 'dialogs.py', 'playback.py', 'native_window.py', 'icons.py',
+                 'menu_labels.py', 'menu_widgets.py',
                  'single_instance.py', 'CamFloat.spec', 'version_info.txt',
                  'release/CamFloat/CamFloat.exe'):
     manifest['files'][relative] = hashlib.sha256((root / relative).read_bytes()).hexdigest()

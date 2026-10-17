@@ -180,7 +180,7 @@ class CameraManager(QDialog):
         self.layout_slots = ensure_layout_slots(config)
         self.slots = self.layout_slots[str(layout)]
         self.assignment_changed = False
-        self.setWindowTitle('등록된 카메라 관리')
+        self.setWindowTitle('카메라 관리')
         self.setStyleSheet(STYLE)
         self.resize(880, 580)
         root = QVBoxLayout(self)

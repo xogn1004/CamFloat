@@ -123,7 +123,7 @@ try:
     timer = QTimer(window)
     timer.timeout.connect(lambda: ticks.append(time.monotonic()))
     timer.start(50)
-    playing = lambda: all(t.player.is_playing() and t.player.has_vout() > 0 and t.player.get_time() > 0 for t in window.tiles)
+    playing = lambda: all(not t.worker.busy and t.player.is_playing() and t.player.has_vout() > 0 and t.player.get_time() > 0 for t in window.tiles)
     assert wait_for(playing, 20), 'Four RTSP streams did not start'
     # Late RTSP subscribers must wait for the next video keyframe, not just audio.
     recorded = wait_for(lambda: all(t.ever_played for t in window.tiles), 15)
@@ -158,6 +158,28 @@ try:
     assert native_handles == [int(t.winId()) for t in window.tiles]
     report['enlargement_no_reconnect'] = True
     report['fullscreen_routes_no_reconnect'] = True
+    # Reproduce the user's two-stream scenario with one paused input. Reload
+    # only that stream; its peer must retain its player/session and keep moving.
+    window.set_layout(2)
+    pair_playing = lambda: all(not t.worker.busy and t.player.is_playing() and t.player.has_vout() > 0
+                              and t.player.get_time() > 0 for t in window.tiles[:2])
+    assert wait_for(pair_playing, 15)
+    first, second = window.tiles[:2]
+    second_revision, second_player = second.worker.revision, id(second.player)
+    for _ in range(3):
+        old = id(first.player)
+        first.player.set_pause(1)
+        assert wait_for(lambda: first.player.get_state().value == 4, 3)
+        window.reconnect(0)
+        assert wait_for(lambda: pair_playing() and id(first.player) != old, 15)
+        clock = second.player.get_time()
+        QTest.qWait(1100)
+        assert second.player.get_time() != clock
+        assert second.worker.revision == second_revision and id(second.player) == second_player
+    report['two_stream_paused_reload_three_times'] = True
+    window.set_layout(4)
+    assert wait_for(playing, 20)
+    assert wait_for(lambda: all(t.ever_played for t in window.tiles), 15)
     handles = [int(t.winId()) for t in window.tiles]
     server.terminate()
     server.wait(5)

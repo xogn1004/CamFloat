@@ -2,11 +2,12 @@
 import time
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer
-from PySide6.QtGui import QCursor
+from PySide6.QtGui import QCursor, QPainter
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QWidget
 
 from icons import icon
 from native_window import set_topmost
+from menu_labels import CAMERAS, TOPMOST, fullscreen_name, tooltip
 
 
 PANEL_STYLE = '''QFrame#panel{background:rgba(19,24,33,242);border:1px solid rgba(174,194,223,42);
@@ -36,8 +37,7 @@ class AppChrome(QWidget):
         row.setSpacing(2)
         self.layout_buttons = {}
         for count in (1, 2, 4):
-            button = self.button(row, None, f'{count}분할 ({count})', lambda n=count: host.set_layout(n))
-            button.setText(str(count))
+            button = self.button(row, f'layout{count}', tooltip(f'{count}분할', str(count)), lambda n=count: host.set_layout(n))
             button.setFixedWidth(24)
             button.setCheckable(True)
             self.layout_buttons[count] = button
@@ -46,12 +46,12 @@ class AppChrome(QWidget):
         separator.setStyleSheet('background:rgba(174,194,223,35);border:0;')
         row.addWidget(separator)
         row.addSpacing(3)
-        self.pin = self.button(row, 'pin', '항상 위 (Ctrl+T)',
+        self.pin = self.button(row, 'pin', tooltip(TOPMOST, 'Ctrl+T'),
                                lambda: host.set_always_on_top(not host.config['always_on_top']))
         self.pin.setCheckable(True)
-        self.fullscreen = self.button(row, 'fullscreen', '분할 전체화면', host.toggle_layout_fullscreen)
-        self.manager = self.button(row, 'camera', '카메라 관리 (Ctrl+M)', host.manage_cameras)
-        self.more = self.button(row, 'more', '앱 메뉴 (Alt)', self.show_menu)
+        self.manager = self.button(row, 'cameras', tooltip(CAMERAS, 'Ctrl+M'), host.manage_cameras)
+        self.fullscreen = self.button(row, 'fullscreen', tooltip('전체화면', 'F11'), host.toggle_layout_fullscreen)
+        self.more = self.button(row, 'more', tooltip('앱 메뉴', 'Alt / Alt+A'), self.show_menu)
         self.deadline = 0
         self.menu_open = False
         self.timer = QTimer(self)
@@ -76,11 +76,16 @@ class AppChrome(QWidget):
             button.setChecked(count == self.host.config['layout'])
         self.pin.setChecked(self.host.config['always_on_top'])
         self.fullscreen.setIcon(icon('restore' if self.host.isFullScreen() else 'fullscreen'))
-        self.fullscreen.setToolTip('전체화면 해제' if self.host.isFullScreen() else '분할 전체화면')
+        self.fullscreen.setToolTip(tooltip(fullscreen_name(self.host.isFullScreen()), 'F11'))
         self.fullscreen.setAccessibleName(self.fullscreen.toolTip())
 
     def position(self):
         self.move(self.host.mapToGlobal(QPoint((self.host.width() - self.width()) // 2, 10)))
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+        painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
 
     def reveal(self):
         if self.host.modal_depth or self.host.closing or self.host.isMinimized() or not self.host.isVisible():
@@ -118,6 +123,8 @@ class AppChrome(QWidget):
         finally:
             self.menu_open = False
             menu.deleteLater()
+            self.more.setDown(False)
+            self.host.repair_overlays()
             self.reveal()
 
     def closeEvent(self, event):

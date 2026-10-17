@@ -5,7 +5,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QApplication
 from camera_model import default_config, new_camera, make_vlc_instance, find_vlc_directory
-from main import PlayerWindow
+from main import PlayerWindow, VERSION
 
 app = QApplication([])
 instance = make_vlc_instance(find_vlc_directory())
@@ -18,7 +18,7 @@ config['slots'] = [c['id'] for c in config['cameras'][:4]]
 config['layout'] = 4
 config['geometry'] = [100, 100, 900, 540]
 window = PlayerWindow(config, instance, persist=False)
-window.setWindowTitle('CamFloat UI 0.5.0')
+window.setWindowTitle(f'CamFloat UI {VERSION}')
 window.show()
 app.exec()
 for tile in window.tiles:

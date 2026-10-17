@@ -10,7 +10,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QActionGroup, QColor, QCursor, QIcon, QPainter, QPen, QShortcut, QKeySequence
 from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QMenu,
-    QMessageBox, QSlider, QToolButton, QVBoxLayout, QWidget, QWidgetAction)
+    QMessageBox, QSlider, QToolButton, QToolTip, QVBoxLayout, QWidget, QWidgetAction)
 
 from camera_model import (APP_NAME, LOAD_WARNINGS, camera_url, crypt, data_path, default_config, find_vlc_directory,
     ensure_layout_slots, fill_empty_slots, load_config, make_vlc_instance,
@@ -21,8 +21,10 @@ from playback import PlaybackWorker
 from single_instance import InstanceGuard
 from icons import icon
 from chrome import AppChrome, LayoutToast
+from menu_labels import CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, menu_text, tooltip
+from menu_widgets import switch_action
 
-VERSION = '0.6.0'
+VERSION = '0.7.0'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -43,12 +45,12 @@ class PlayerTile(QWidget):
         self.host, self.index, self.instance = host, index, instance
         self.setStyleSheet('background:#080b10;')
         self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
-        self.player = instance.media_player_new()
-        self.player.set_hwnd(int(self.winId()))
-        self.player.video_set_mouse_input(False)
-        self.player.video_set_key_input(False)
+        player = instance.media_player_new()
+        player.set_hwnd(int(self.winId()))
+        player.video_set_mouse_input(False)
+        player.video_set_key_input(False)
         self.current_key = None
-        self.worker = PlaybackWorker(instance, self.player)
+        self.worker = PlaybackWorker(instance, player, hwnd=int(self.winId()))
         self.attempt_started = 0
         self.retry_at = None
         self.retry_count = 0
@@ -58,7 +60,13 @@ class PlayerTile(QWidget):
         self.clock_progress_seen = False
         self.ever_played = False
         self.initial_failed = False
+        self.last_frame_count = None
+        self.last_frame_progress = 0
         self.overlay = InputOverlay(host, index)
+
+    @property
+    def player(self):
+        return self.worker.player
 
     def play_camera(self, camera):
         if not camera:
@@ -74,16 +82,18 @@ class PlayerTile(QWidget):
             self.start_attempt(camera)
         self.apply_audio(camera)
 
-    def start_attempt(self, camera):
+    def start_attempt(self, camera, reset=False):
         self.attempt_started = time.monotonic()
         self.last_clock = None
         self.clock_progress_seen = False
         self.last_progress = self.attempt_started
+        self.last_frame_count = None
+        self.last_frame_progress = self.attempt_started
         self.retry_at = None
         self.initial_failed = False
         self.status_text = '영상 연결 중…'
         self.worker.request((camera_url(camera), self.host.config['hardware_acceleration'],
-                             camera['volume'], camera['muted']))
+                             camera['volume'], camera['muted']), reset=reset)
 
     def apply_audio(self, camera):
         self.worker.set_audio(camera['volume'], camera['muted'])
@@ -110,6 +120,25 @@ class PlayerTile(QWidget):
         self.status_text = ''
         self.ever_played = False
         self.initial_failed = False
+
+    def displayed_frames(self):
+        import vlc
+        media = self.player.get_media()
+        if media is None:
+            return None
+        try:
+            stats = vlc.MediaStats()
+            return stats.displayed_pictures if media.get_stats(stats) else None
+        finally:
+            media.release()
+
+    def frames_stalled(self, now):
+        count = self.displayed_frames()
+        if count is None or count <= 0:
+            return False
+        if count != self.last_frame_count:
+            self.last_frame_count, self.last_frame_progress = count, now
+        return now - self.last_frame_progress > 20
 
     def release(self):
         self.worker.shutdown()
@@ -183,9 +212,9 @@ class InputOverlay(QWidget):
             item.clicked.connect(lambda: (self.host.select_slot(self.index), callback()))
             item.installEventFilter(self)
             return item
-        self.reload = button('refresh', '다시 연결 (Ctrl+R)', lambda: self.host.reconnect(self.index))
-        self.choose = button('camera', '이 SCREEN의 카메라 지정', self.choose_camera)
-        self.mute = button('muted', '음소거 해제 (M)', lambda: self.host.toggle_mute(self.index))
+        self.reload = button('refresh', tooltip('이 영상 다시 연결', 'Ctrl+R'), lambda: self.host.reconnect(self.index))
+        self.choose = button('camera', '이 화면의 카메라 지정', self.choose_camera)
+        self.mute = button('muted', tooltip('이 영상 음소거 해제', 'M'), lambda: self.host.toggle_mute(self.index))
         self.volume = QSlider(Qt.Orientation.Horizontal)
         self.volume.setRange(0, 100)
         self.volume.setFixedWidth(64)
@@ -201,7 +230,7 @@ class InputOverlay(QWidget):
         row.addWidget(self.volume)
         row.addWidget(self.value)
         row.addWidget(self.choose)
-        self.fullscreen = button('fullscreen', '이 화면 전체화면 (F11)', lambda: self.host.toggle_fullscreen(self.index))
+        self.fullscreen = button('fullscreen', tooltip('전체화면', 'F11'), lambda: self.host.toggle_fullscreen(self.index))
         row.addWidget(self.fullscreen)
         self.previous = button('left', '이전 카메라 (←)', lambda: self.host.cycle_camera(-1))
         self.following = button('right', '다음 카메라 (→)', lambda: self.host.cycle_camera(1))
@@ -236,8 +265,7 @@ class InputOverlay(QWidget):
 
     def choose_camera(self):
         self.host.select_slot(self.index)
-        menu = QMenu(self)
-        menu.setStyleSheet(MENU_STYLE)
+        menu = self.host.new_menu(parent=self)
         self.host.populate_camera_menu(menu, self.index)
         menu.exec(self.choose.mapToGlobal(QPoint(0, 0)) - QPoint(0, menu.sizeHint().height()))
         menu.deleteLater()
@@ -246,8 +274,10 @@ class InputOverlay(QWidget):
     def paintEvent(self, event):
         painter = QPainter(self)
         # Alpha must stay nonzero so the layered HWND receives input over video.
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
         painter.fillRect(self.rect(), QColor(0, 0, 0, 4))
-        if self.host.selected == self.index:
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_SourceOver)
+        if self.host.selection_border_visible(self.index):
             painter.setPen(QPen(QColor('#77b5ff'), 2))
             painter.drawRect(self.rect().adjusted(1, 1, -2, -2))
 
@@ -318,15 +348,15 @@ class InputOverlay(QWidget):
             sum(c.get('enabled', True) for c in self.host.config['cameras']) > 1))
         self.previous.setVisible(navigation)
         self.following.setVisible(navigation)
-        self.previous.setToolTip('이전 SCREEN (←)' if enlarged else '이전 카메라 (←)')
-        self.following.setToolTip('다음 SCREEN (→)' if enlarged else '다음 카메라 (→)')
+        self.previous.setToolTip(tooltip('이전 SCREEN' if enlarged else '이전 카메라', '←'))
+        self.following.setToolTip(tooltip('다음 SCREEN' if enlarged else '다음 카메라', '→'))
         self.previous.setAccessibleName(self.previous.toolTip())
         self.following.setAccessibleName(self.following.toolTip())
         self.reload.setEnabled(bool(camera))
         self.mute.setEnabled(bool(camera))
         self.volume.setEnabled(bool(camera))
         self.fullscreen.setIcon(icon('restore' if self.host.isFullScreen() else 'fullscreen'))
-        self.fullscreen.setToolTip('전체화면 해제 (F11)' if self.host.isFullScreen() else '이 화면 전체화면 (F11)')
+        self.fullscreen.setToolTip(tooltip(fullscreen_name(self.host.isFullScreen()), 'F11'))
         self.fullscreen.setAccessibleName(self.fullscreen.toolTip())
         if camera:
             self.volume.blockSignals(True)
@@ -334,7 +364,7 @@ class InputOverlay(QWidget):
             self.volume.blockSignals(False)
             self.value.setText(str(camera['volume']))
             self.mute.setIcon(icon('muted' if camera['muted'] else 'volume'))
-            self.mute.setToolTip('음소거 해제 (M)' if camera['muted'] else '음소거 (M)')
+            self.mute.setToolTip(tooltip('이 영상 음소거 해제' if camera['muted'] else '이 영상 음소거', 'M'))
             self.mute.setAccessibleName(self.mute.toolTip())
             self.show_status(self.host.tiles[self.index].status_text)
         else:
@@ -383,7 +413,6 @@ class InputOverlay(QWidget):
             if (point - self.origin).manhattanLength() >= 3:
                 self.dragged = True
                 self.click_candidate = False
-                self.host.cancel_pending_click()
                 self.host.drag_geometry(self.start_geometry, point - self.origin, self.edges)
         else:
             self.setCursor(self.host.resize_cursor(self.host.edges_at(point)))
@@ -391,7 +420,7 @@ class InputOverlay(QWidget):
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton and self.click_candidate and not self.dragged and not self.multi_click:
-            self.host.defer_deselect(self.index)
+            self.host.deselect_slot(self.index)
         self.click_candidate = False
         if self.origin is not None:
             self.host.queue_save()
@@ -404,7 +433,6 @@ class InputOverlay(QWidget):
             self.origin = None
             self.click_candidate = False
             self.multi_click = True
-            self.host.cancel_pending_click()
             self.host.select_slot(self.index)
             self.host.record_double_click(self.index, event.globalPosition().toPoint())
             self.host.toggle_focus(self.index)
@@ -425,9 +453,10 @@ class PlayerWindow(QWidget):
     def __init__(self, config, instance, persist=True):
         super().__init__()
         self.config, self.instance, self.persist_enabled = config, instance, persist
+        QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeMenu, False)
+        QApplication.setEffectEnabled(Qt.UIEffect.UI_AnimateMenu, False)
         ensure_layout_slots(self.config)
         self.selected = None
-        self.pending_deselect = None
         self.last_double = None
         self.modal_depth = 0
         self.closing = False
@@ -447,9 +476,6 @@ class PlayerWindow(QWidget):
             self.tiles.append(PlayerTile(self, index, instance))
         self.chrome = AppChrome(self)
         self.toast = LayoutToast(self)
-        self.click_timer = QTimer(self)
-        self.click_timer.setSingleShot(True)
-        self.click_timer.timeout.connect(self.commit_deselect)
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(350)
@@ -506,7 +532,6 @@ class PlayerWindow(QWidget):
         return f'SCREEN {index + 1}'
 
     def select_slot(self, index):
-        self.cancel_pending_click()
         self.selected = index
         for tile in self.tiles:
             tile.overlay.update()
@@ -521,19 +546,24 @@ class PlayerWindow(QWidget):
 
     app_is_foreground = staticmethod(app_is_foreground)
 
-    def cancel_pending_click(self):
-        self.click_timer.stop()
-        self.pending_deselect = None
-
-    def defer_deselect(self, index):
-        self.pending_deselect = index
-        self.click_timer.start(QApplication.doubleClickInterval())
-
-    def commit_deselect(self):
-        index = self.pending_deselect
-        self.pending_deselect = None
-        if index is not None and self.selected == index:
+    def deselect_slot(self, index):
+        if self.selected == index:
             self.select_slot(None)
+
+    def selection_border_visible(self, index):
+        return (self.selected == index and self.config['layout'] > 1
+                and not (self.isFullScreen() and self.focused_screen is not None))
+
+    def repair_overlays(self):
+        if self.closing:
+            return
+        QToolTip.hideText()
+        self.sync_overlays()
+        for tile in self.tiles:
+            tile.overlay.update()
+            tile.overlay.bar.update()
+        self.chrome.update()
+        self.chrome.panel.update()
 
     def record_double_click(self, index, position):
         self.last_double = (index, QPoint(position), time.monotonic())
@@ -546,7 +576,6 @@ class PlayerWindow(QWidget):
         if (time.monotonic() - timestamp > QApplication.doubleClickInterval() / 1000
                 or (point - position).manhattanLength() > QApplication.startDragDistance()):
             return False
-        self.cancel_pending_click()
         self.select_slot(index)
         if self.config['layout'] > 1:
             if self.fullscreen_geometry is None:
@@ -673,7 +702,6 @@ class PlayerWindow(QWidget):
             self.closing = True
             self.status_timer.stop()
             self.save_timer.stop()
-            self.click_timer.stop()
             self.chrome.timer.stop()
             self.toast.timer.stop()
             QApplication.instance().removeEventFilter(self)
@@ -733,8 +761,8 @@ class PlayerWindow(QWidget):
     def set_layout(self, count):
         if count not in (1, 2, 4):
             raise ValueError('화면 구성은 1, 2, 4만 지원합니다.')
+        QToolTip.hideText()
         changed = self.config['layout'] != count
-        self.cancel_pending_click()
         self.last_double = None
         if self.focused_screen is not None:
             self.restore_focus()
@@ -869,14 +897,23 @@ class PlayerWindow(QWidget):
             camera = self.camera_for_slot(index)
             if not camera or tile.current_key is None:
                 continue
-            state = tile.player.get_state().value
-            now = time.monotonic()
-            stalled = state == 3 and not tile.worker.busy and tile.clock_stalled(now)
             if tile.initial_failed:
                 tile.status_text = '첫 연결 실패 · 자동 재연결 안 함\n다시 연결 버튼으로 수동 재시도하세요'
-            elif tile.worker.busy:
+                tile.overlay.show_status(tile.status_text)
+                continue
+            # A reset may replace and release the old native player. Do not
+            # inspect that player until the serialized worker has published it.
+            if tile.worker.busy:
                 tile.status_text = '영상 연결 준비 중…'
-            elif state == 3 and tile.player.has_vout() > 0 and not tile.worker.error and not stalled:
+                tile.overlay.show_status(tile.status_text)
+                continue
+            state = tile.player.get_state().value
+            now = time.monotonic()
+            visible_output = not self.isMinimized() and (self.focused_screen is None or self.focused_screen == index)
+            if not visible_output:
+                tile.last_frame_count, tile.last_frame_progress = None, now
+            stalled = state == 3 and (tile.clock_stalled(now) or (visible_output and tile.frames_stalled(now)))
+            if state == 3 and tile.player.has_vout() > 0 and not tile.worker.error and not stalled:
                 tile.ever_played = True
                 tile.initial_failed = False
                 tile.status_text = ''
@@ -887,11 +924,11 @@ class PlayerWindow(QWidget):
                 tile.apply_audio(camera)
             elif tile.retry_at is not None:
                 if now >= tile.retry_at:
-                    tile.start_attempt(camera)
+                    tile.start_attempt(camera, reset=True)
                 else:
                     seconds = max(1, int(tile.retry_at - now + .99))
                     tile.status_text = f'연결 끊김 · {seconds}초 후 자동 재연결\n주소·비밀번호·카메라 전원을 확인하세요'
-            elif state in (5, 6, 7) or tile.worker.error or stalled or now - tile.attempt_started > 15:
+            elif state in (4, 5, 6, 7) or tile.worker.error or stalled or now - tile.attempt_started > 15:
                 if not tile.ever_played:
                     tile.initial_failed = True
                     tile.retry_at = None
@@ -910,11 +947,12 @@ class PlayerWindow(QWidget):
         camera = self.camera_for_slot(index)
         if camera:
             self.tiles[index].retry_count = 0
-            self.tiles[index].start_attempt(camera)
+            self.tiles[index].start_attempt(camera, reset=True)
 
     def single_view(self, index):
         if self.config['layout'] == 1 or not 0 <= index < self.config['layout']:
             return
+        QToolTip.hideText()
         self.focused_screen = index
         self.select_slot(index)
         self.grid.activate()
@@ -924,6 +962,9 @@ class PlayerWindow(QWidget):
 
     def restore_focus(self):
         if self.focused_screen is not None:
+            QToolTip.hideText()
+            if self.isFullScreen():
+                self.fullscreen_previous_focus = None
             self.focused_screen = None
             self.grid.activate()
             for tile in self.tiles:
@@ -954,6 +995,7 @@ class PlayerWindow(QWidget):
         self.toggle_fullscreen(None)
 
     def toggle_fullscreen(self, index=None):
+        QToolTip.hideText()
         if self.fullscreen_geometry is not None:
             self.exit_fullscreen(restore_previous=True)
             return
@@ -1031,6 +1073,14 @@ class PlayerWindow(QWidget):
                 '첫 연결 실패는 수동 재시도만 가능합니다.\n'
                 '정상 재생 후 끊긴 경우에만 2~30초 간격으로 자동 재시도합니다.')
 
+    def new_menu(self, title='', parent=None):
+        QToolTip.hideText()
+        menu = QMenu(title, parent or self)
+        menu.setStyleSheet(MENU_STYLE)
+        menu.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint, True)
+        menu.aboutToHide.connect(lambda: QTimer.singleShot(0, self.repair_overlays))
+        return menu
+
     def populate_camera_menu(self, menu, index):
         camera = self.camera_for_slot(index)
         group = QActionGroup(menu)
@@ -1047,18 +1097,17 @@ class PlayerWindow(QWidget):
         menu.addSeparator()
         if camera:
             menu.addAction(icon('close'), '이 화면 비우기', lambda: self.assign_camera(index, None, keep_focus=True))
-        menu.addAction(icon('grid'), '등록된 카메라 관리…', self.manage_cameras)
+        menu.addAction(icon('cameras'), menu_text(CAMERAS, 'Ctrl+M'), self.manage_cameras)
 
     def build_context_menu(self, index, parent=None):
-        menu = QMenu(parent or self)
-        menu.setStyleSheet(MENU_STYLE)
+        menu = self.new_menu(parent=parent)
         camera = self.camera_for_slot(index)
         title = menu.addAction(f"{self.slot_name(index)}  |  {camera['name'] if camera else '비어 있음'}")
         title.setEnabled(False)
-        assign = menu.addMenu('이 화면의 카메라 지정')
+        assign = menu.addMenu(icon('camera'), '이 화면의 카메라 지정')
         self.populate_camera_menu(assign, index)
         if camera:
-            quality = menu.addMenu('이 영상 화질')
+            quality = menu.addMenu(icon('quality'), '이 영상 화질')
             quality.setEnabled(supports_quality(camera))
             quality.setToolTip('사용자 지정 경로는 카메라 수정에서 SD 전체 주소를 추가하세요.')
             quality_group = QActionGroup(quality)
@@ -1068,11 +1117,11 @@ class PlayerWindow(QWidget):
                 action.setChecked(camera['quality'] == label)
                 quality_group.addAction(action)
                 action.triggered.connect(lambda checked=False, q=label: self.set_quality(index, q))
-            mute = menu.addAction('이 영상 음소거')
+            mute = menu.addAction(icon('muted'), menu_text('이 영상 음소거 해제' if camera['muted'] else '이 영상 음소거', 'M'))
             mute.setCheckable(True)
             mute.setChecked(camera['muted'])
             mute.triggered.connect(lambda: self.toggle_mute(index))
-            volume_menu = menu.addMenu('이 영상 음량')
+            volume_menu = menu.addMenu(icon('volume'), '이 영상 음량')
             volume_widget = QWidget()
             volume_box = QVBoxLayout(volume_widget)
             volume_label = QLabel(f"음량 {camera['volume']}%")
@@ -1087,37 +1136,36 @@ class PlayerWindow(QWidget):
             volume_action = QWidgetAction(volume_menu)
             volume_action.setDefaultWidget(volume_widget)
             volume_menu.addAction(volume_action)
-            menu.addAction('이 영상 다시 연결', lambda: self.reconnect(index))
+            menu.addAction(icon('refresh'), menu_text('이 영상 다시 연결', 'Ctrl+R'), lambda: self.reconnect(index))
             if self.config['layout'] > 1:
-                menu.addAction('이 화면만 크게 보기', lambda: self.single_view(index))
+                menu.addAction(icon('enlarge'), menu_text('이 화면만 크게 보기', '더블클릭'), lambda: self.single_view(index))
         if self.focused_screen is not None:
-            menu.addAction('이전 분할로 복원 (Esc)', self.restore_focus)
-        menu.addAction('전체화면 해제 (F11)' if self.isFullScreen() else '이 화면 전체화면',
+            menu.addAction(icon('restore'), menu_text('이전 분할로 복원', 'Esc'), self.restore_focus)
+        menu.addAction(icon('restore' if self.isFullScreen() else 'fullscreen'), menu_text(fullscreen_name(self.isFullScreen()), 'F11'),
                        lambda: self.toggle_fullscreen(index))
         menu.addSeparator()
         menu.addMenu(self.build_app_menu(menu)).setIcon(icon('more'))
-        self.decorate_menu(menu)
         return menu
 
     def build_app_menu(self, parent=None):
-        menu = QMenu('앱 메뉴', parent or self)
-        menu.setStyleSheet(MENU_STYLE)
-        menu.addAction('CamFloat').setEnabled(False)
-        menu.addAction('전체화면 해제 (F11)' if self.isFullScreen() else '분할 전체화면',
-                       self.toggle_layout_fullscreen)
-        layouts = menu.addMenu('전체 화면 구성')
+        menu = self.new_menu('앱 메뉴', parent)
+        layouts = menu.addMenu(icon('layout'), LAYOUT)
         layout_group = QActionGroup(layouts)
         for count in (1, 2, 4):
-            action = layouts.addAction('화면 1개' if count == 1 else f'{count}분할')
+            action = layouts.addAction(icon(f'layout{count}'), menu_text(f'{count}분할', str(count)))
             action.setCheckable(True)
             action.setChecked(self.config['layout'] == count)
             layout_group.addAction(action)
             action.triggered.connect(lambda checked=False, n=count: self.set_layout(n))
-        top = menu.addAction('항상 위에 표시')
+        top = menu.addAction(icon('pin'), menu_text(TOPMOST, 'Ctrl+T'))
         top.setCheckable(True)
         top.setChecked(self.config['always_on_top'])
         top.triggered.connect(self.set_always_on_top)
-        opacity_menu = menu.addMenu('프로그램 전체 투명도')
+        menu.addAction(icon('cameras'), menu_text(CAMERAS, 'Ctrl+M'), self.manage_cameras)
+        menu.addAction(icon('restore' if self.isFullScreen() else 'fullscreen'),
+                       menu_text(fullscreen_name(self.isFullScreen()), 'F11'), self.toggle_layout_fullscreen)
+        menu.addSeparator()
+        opacity_menu = menu.addMenu(icon('opacity'), OPACITY)
         widget = QWidget()
         box = QVBoxLayout(widget)
         opacity_label = QLabel(f"투명도 {100 - self.config['opacity']}%")
@@ -1132,34 +1180,16 @@ class PlayerWindow(QWidget):
         action = QWidgetAction(opacity_menu)
         action.setDefaultWidget(widget)
         opacity_menu.addAction(action)
-        opacity_menu.addAction('불투명하게 복원', lambda: self.set_opacity(100))
-        hardware = menu.addAction('하드웨어 가속')
-        hardware.setCheckable(True)
-        hardware.setChecked(self.config['hardware_acceleration'])
-        hardware.triggered.connect(self.set_hardware)
+        opacity_menu.addAction(menu_text('불투명하게 복원', 'Ctrl+0'), lambda: self.set_opacity(100))
+        switch_action(menu, '하드웨어 가속', self.config['hardware_acceleration'], self.set_hardware)
         menu.addSeparator()
-        menu.addAction('등록된 카메라 관리…', self.manage_cameras)
-        menu.addAction('모든 카메라 음소거', self.mute_all)
-        menu.addAction('사용법 / 단축키 (F1)', self.show_help)
-        menu.addAction('최소화', self.showMinimized)
-        menu.addAction('종료', self.close)
+        menu.addAction(icon('muted'), menu_text('모든 카메라 음소거', 'Ctrl+Shift+M'), self.mute_all)
+        menu.addAction(icon('help'), menu_text('사용법 / 단축키', 'F1'), self.show_help)
+        menu.addAction(icon('minimize'), '최소화', self.showMinimized)
+        menu.addAction(icon('close'), menu_text('종료', 'Alt+F4'), self.close)
         menu.addSeparator()
         menu.addAction(f'CamFloat {VERSION}').setEnabled(False)
-        self.decorate_menu(menu)
         return menu
-
-    @staticmethod
-    def decorate_menu(menu):
-        symbols = {'이 화면의 카메라 지정': 'camera', '이 영상 화질': 'quality', '이 영상 음소거': 'muted',
-            '이 영상 음량': 'volume', '이 영상 다시 연결': 'refresh', '이 화면만 크게 보기': 'fullscreen',
-            '이전 분할로 복원 (Esc)': 'restore', '전체 화면 구성': 'grid', '항상 위에 표시': 'pin',
-            '프로그램 전체 투명도': 'opacity', '하드웨어 가속': 'chip', '등록된 카메라 관리…': 'grid',
-            '모든 카메라 음소거': 'muted', '사용법 / 단축키 (F1)': 'help', '최소화': 'minimize', '종료': 'close',
-            '이 화면 전체화면': 'fullscreen', '분할 전체화면': 'grid',
-            '전체화면 해제 (F11)': 'restore'}
-        for action in menu.actions():
-            if action.text() in symbols:
-                action.setIcon(icon(symbols[action.text()]))
 
     def set_hardware(self, enabled):
         self.config['hardware_acceleration'] = bool(enabled)

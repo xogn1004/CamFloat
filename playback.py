@@ -5,10 +5,12 @@ import threading
 
 
 class PlaybackWorker:
-    def __init__(self, instance, player):
+    def __init__(self, instance, player, hwnd=None):
         self.instance, self.player = instance, player
         self.condition = threading.Condition()
         self.pending = None
+        self.pending_reset = False
+        self.hwnd = hwnd
         self.revision = 0
         self.handled = 0
         self.closing = False
@@ -19,11 +21,12 @@ class PlaybackWorker:
         self.thread = threading.Thread(target=self.run, name='CamFloat playback', daemon=True)
         self.thread.start()
 
-    def request(self, request):
+    def request(self, request, reset=False):
         with self.condition:
             if self.closing:
                 return
             self.pending = request
+            self.pending_reset = bool(reset)
             if request:
                 self.audio = request[2:]
             self.revision += 1
@@ -48,6 +51,7 @@ class PlaybackWorker:
                 with self.condition:
                     self.condition.wait_for(lambda: self.closing or self.revision != self.handled)
                     revision, request, closing = self.revision, self.pending, self.closing
+                    reset = self.pending_reset
                 try:
                     if active:
                         self.player.stop()
@@ -60,6 +64,19 @@ class PlaybackWorker:
                         break
                     self.error = False
                     if request:
+                        if reset and self.hwnd is not None:
+                            # A fresh decoder/output also repairs a wedged vout.
+                            replacement = self.instance.media_player_new()
+                            try:
+                                replacement.set_hwnd(self.hwnd)
+                                replacement.video_set_mouse_input(False)
+                                replacement.video_set_key_input(False)
+                            except Exception:
+                                replacement.release()
+                                raise
+                            with self.condition:
+                                previous, self.player = self.player, replacement
+                            previous.release()
                         url, hardware, volume, muted = request
                         media = self.instance.media_new(url)
                         try:
@@ -74,6 +91,13 @@ class PlaybackWorker:
                         active = True
                         if self.player.play() == -1:
                             self.error = True
+                        # No pause feature is exposed by CamFloat. Never carry
+                        # an accidental VLC pause state through reconnection.
+                        if hasattr(self.player, 'set_pause'):
+                            self.player.set_pause(0)
+                        if self.hwnd is not None:
+                            self.player.video_set_mouse_input(False)
+                            self.player.video_set_key_input(False)
                         with self.condition:
                             volume, muted = self.audio
                             self.player.audio_set_volume(volume)

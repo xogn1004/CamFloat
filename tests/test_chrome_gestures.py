@@ -32,7 +32,6 @@ class ChromeGestures(unittest.TestCase):
             QTest.qWait(QApplication.doubleClickInterval() + 40)
             self.assertEqual(self.window.selected, 0)
             self.click(0)
-            QTest.qWait(QApplication.doubleClickInterval() + 40)
             self.assertIsNone(self.window.selected)
             camera = self.window.camera_for_slot(0)
             muted, revision = camera['muted'], self.window.tiles[0].worker.revision
@@ -118,7 +117,7 @@ class ChromeGestures(unittest.TestCase):
         self.window.toggle_layout_fullscreen()
         self.assertIsNone(self.window.focused_screen)
 
-    def test_drag_does_not_deselect_and_double_cancels_pending_deselect(self):
+    def test_drag_does_not_deselect_and_double_restores_immediate_deselection(self):
         self.window.select_slot(0)
         overlay = self.window.tiles[0].overlay
         with patch.object(self.window, 'app_is_foreground', return_value=True):
@@ -126,10 +125,10 @@ class ChromeGestures(unittest.TestCase):
             QTest.mousePress(overlay, Qt.MouseButton.LeftButton, pos=point)
             QTest.mouseMove(overlay, point + QPoint(30, 20))
             QTest.mouseRelease(overlay, Qt.MouseButton.LeftButton, pos=point + QPoint(30, 20))
-            self.assertFalse(self.window.click_timer.isActive())
-            self.window.defer_deselect(0)
+            self.assertEqual(self.window.selected, 0)
+            self.window.deselect_slot(0)
+            self.assertIsNone(self.window.selected)
             QTest.mouseDClick(overlay, Qt.MouseButton.LeftButton, pos=overlay.rect().center())
-            self.assertFalse(self.window.click_timer.isActive())
             self.assertEqual(self.window.selected, 0)
 
     def test_chrome_toast_and_screen_button_order(self):
