@@ -74,7 +74,7 @@ def new_camera(name='', url=''):
 
 def default_config():
     return dict(version=4, cameras=[], slots=[None] * 4, layout_slots=None, layout=1, always_on_top=True,
-                hardware_acceleration=True, opacity=100, geometry=None)
+                hardware_acceleration=True, master_muted=False, opacity=100, geometry=None)
 
 
 def ensure_camera_numbers(cameras):
@@ -130,6 +130,7 @@ def normalize(raw, encrypted=False):
     result = default_config()
     for key in ('always_on_top', 'hardware_acceleration'):
         result[key] = bool(raw.get(key, True))
+    result['master_muted'] = bool(raw.get('master_muted', False))
     layout = raw.get('layout', 1)
     result['layout'] = layout if type(layout) is int and layout in (1, 2, 4) else 1
     result['opacity'] = bounded_int(raw.get('opacity'), 100, 20, 100)

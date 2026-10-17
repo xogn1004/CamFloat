@@ -30,15 +30,26 @@ manifest = dict(version=VERSION, recorded_at=datetime.now(timezone.utc).isoforma
 initial = folder / 'initial-failure-qa.json'
 if initial.exists():
     manifest['initial_connection_check'] = json.loads(initial.read_text(encoding='utf-8'))
+visual = json.loads((folder / 'visual-qa.json').read_text(encoding='utf-8'))
+real = json.loads((folder / 'real-camera-qa.json').read_text(encoding='utf-8'))[0]
+manifest['visual_check'] = visual
+manifest['real_camera_check'] = dict(version=real['version'],
+    sample_count=len(real['samples']), distinct_images=real['distinct_images'],
+    first_sample_second=real['samples'][0]['second'], last_sample_second=real['samples'][-1]['second'],
+    all_playing=all(item['state'] == 3 for item in real['samples']))
 for relative in ('main.py', 'chrome.py', 'camera_model.py', 'dialogs.py', 'playback.py', 'native_window.py', 'icons.py',
-                 'menu_labels.py', 'menu_widgets.py',
+                 'menu_labels.py', 'volume_popup.py', 'playback_profiles.py', 'playback_diagnostics.py',
                  'single_instance.py', 'CamFloat.spec', 'version_info.txt',
                  'release/CamFloat/CamFloat.exe'):
     manifest['files'][relative] = hashlib.sha256((root / relative).read_bytes()).hexdigest()
 manifest['ok'] = unit_ok and network['ok'] and packaged['ok']
 manifest['ok'] = manifest['ok'] and network['version'] == VERSION and packaged['version'] == VERSION
 if initial.exists():
-    manifest['ok'] = manifest['ok'] and manifest['initial_connection_check']['ok']
+    manifest['ok'] = manifest['ok'] and manifest['initial_connection_check']['ok'] and manifest['initial_connection_check']['version'] == VERSION
+manifest['ok'] = (manifest['ok'] and visual['ok'] and visual['version'] == VERSION
+    and real['version'] == VERSION and len(real['samples']) >= 10
+    and real['distinct_images'] == len(real['samples'])
+    and manifest['real_camera_check']['all_playing'])
 (folder / 'summary.json').write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding='utf-8')
 print(json.dumps({k: v for k, v in manifest.items() if k not in ('network', 'files')}, ensure_ascii=False, indent=2))
 raise SystemExit(0 if manifest['ok'] else 1)

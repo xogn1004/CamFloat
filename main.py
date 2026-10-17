@@ -16,17 +16,19 @@ from camera_model import (APP_NAME, LOAD_WARNINGS, camera_url, crypt, data_path,
     ensure_layout_slots, fill_empty_slots, load_config, make_vlc_instance,
     new_camera, redact, save_config, supports_quality)
 from dialogs import CameraManager
-from native_window import app_is_foreground, configure_app_identity, is_topmost, set_topmost, taskbar_icon_state
+from native_window import (app_is_foreground, configure_app_identity, is_topmost, set_topmost,
+                          taskbar_icon_state, ensure_taskbar_minimize, taskbar_can_minimize, system_minimize)
 from playback import PlaybackWorker
 from playback_profiles import PROFILES, instance_options, select_profile
 from playback_diagnostics import PlaybackDiagnostics
 from single_instance import InstanceGuard
 from icons import icon
 from chrome import AppChrome, LayoutToast
-from menu_labels import CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, menu_text, tooltip
-from menu_widgets import switch_action
+from menu_labels import (CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, menu_text, tooltip,
+                         topmost_name, master_mute_name, hardware_name)
+from volume_popup import VolumePopup
 
-VERSION = '0.7.2'
+VERSION = '1.0.0-rc.1'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -95,10 +97,10 @@ class PlayerTile(QWidget):
         self.initial_failed = False
         self.status_text = '영상 연결 중…'
         self.worker.request((camera_url(camera), self.host.config['hardware_acceleration'],
-                             camera['volume'], camera['muted']), reset=reset)
+                             camera['volume'], self.host.audio_muted(camera)), reset=reset)
 
     def apply_audio(self, camera):
-        self.worker.set_audio(camera['volume'], camera['muted'])
+        self.worker.set_audio(camera['volume'], self.host.audio_muted(camera))
 
     def clock_stalled(self, now):
         clock = self.player.get_time()
@@ -257,6 +259,7 @@ class InputOverlay(QWidget):
         self.idle_timer.setSingleShot(True)
         self.idle_timer.setInterval(2500)
         self.idle_timer.timeout.connect(self.hide_idle_controls)
+        self.volume_popup = VolumePopup(self)
 
     def reveal_controls(self):
         self.hovered = True
@@ -264,7 +267,8 @@ class InputOverlay(QWidget):
         self.idle_timer.start()
 
     def hide_idle_controls(self):
-        if self.bar.underMouse() or self.previous.underMouse() or self.following.underMouse() or self.volume.isSliderDown():
+        if (self.bar.underMouse() or self.previous.underMouse() or self.following.underMouse()
+                or self.volume.isSliderDown() or self.volume_popup.isVisible()):
             self.idle_timer.start()
             return
         self.hovered = False
@@ -272,6 +276,7 @@ class InputOverlay(QWidget):
         self.bar.hide()
         self.previous.hide()
         self.following.hide()
+        self.volume_popup.hide()
 
     def choose_camera(self):
         self.host.select_slot(self.index)
@@ -317,6 +322,14 @@ class InputOverlay(QWidget):
         return super().nativeEvent(event_type, message)
 
     def eventFilter(self, watched, event):
+        if watched == self.mute:
+            if event.type() == QEvent.Type.Enter:
+                self.volume_popup.show_for_speaker()
+            elif event.type() == QEvent.Type.Leave:
+                self.volume_popup.schedule_hide()
+            elif event.type() == QEvent.Type.Wheel:
+                self.adjust_volume_wheel(event)
+                return True
         if event.type() == QEvent.Type.MouseButtonPress:
             # A control consumes its returning click. Do not retain that native
             # activation snapshot for the next click on the video background.
@@ -325,8 +338,20 @@ class InputOverlay(QWidget):
             self.host.select_slot(self.index)
         return super().eventFilter(watched, event)
 
+    def expanded_controls(self):
+        return self.width() >= 310 and self.height() >= 150
+
+    def adjust_volume_wheel(self, event):
+        camera = self.host.camera_for_slot(self.index)
+        if camera and event.angleDelta().y():
+            steps = max(1, abs(event.angleDelta().y()) // 120)
+            self.host.set_volume(self.index, camera['volume'] + (5 * steps if event.angleDelta().y() > 0 else -5 * steps))
+        event.accept()
+
     def arrange_controls(self):
-        expanded = self.width() >= 310 and self.height() >= 150
+        expanded = self.expanded_controls()
+        if expanded and hasattr(self, 'volume_popup'):
+            self.volume_popup.hide()
         self.volume.setVisible(expanded)
         self.value.setVisible(expanded)
         width = 232 if expanded else 128
@@ -373,11 +398,18 @@ class InputOverlay(QWidget):
             self.volume.setValue(camera['volume'])
             self.volume.blockSignals(False)
             self.value.setText(str(camera['volume']))
-            self.mute.setIcon(icon('muted' if camera['muted'] else 'volume'))
-            self.mute.setToolTip(tooltip('이 영상 음소거 해제' if camera['muted'] else '이 영상 음소거', 'M'))
+            self.mute.setIcon(icon('muted' if self.host.audio_muted(camera) else 'volume'))
+            name = '이 영상 음소거 해제' if camera['muted'] else '이 영상 음소거'
+            if self.host.config.get('master_muted', False):
+                name = '전체 음소거 중 · 개별 ' + ('음소거 해제' if camera['muted'] else '음소거')
+            self.mute.setToolTip(tooltip(name, 'M'))
             self.mute.setAccessibleName(self.mute.toolTip())
+            self.volume_popup.slider.blockSignals(True)
+            self.volume_popup.slider.setValue(camera['volume'])
+            self.volume_popup.slider.blockSignals(False)
             self.show_status(self.host.tiles[self.index].status_text)
         else:
+            self.volume_popup.hide()
             self.show_status('우클릭으로 카메라 지정\n카메라 지정 / 새 카메라 등록')
         if hasattr(self.host, 'chrome'):
             self.host.position_screen_labels()
@@ -393,7 +425,14 @@ class InputOverlay(QWidget):
         self.bar.hide()
         self.previous.hide()
         self.following.hide()
+        self.volume_popup.hide()
         super().leaveEvent(event)
+
+    def hideEvent(self, event):
+        if hasattr(self, 'volume_popup'):
+            self.volume_popup.hide_timer.stop()
+            self.volume_popup.hide()
+        super().hideEvent(event)
 
     def mousePressEvent(self, event):
         self.click_candidate = False
@@ -463,6 +502,7 @@ class PlayerWindow(QWidget):
     def __init__(self, config, instance, persist=True):
         super().__init__()
         self.config, self.instance, self.persist_enabled = config, instance, persist
+        self.config.setdefault('master_muted', False)
         self.playback_profile = QApplication.instance().property('playback_profile') or 'auto'
         QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeMenu, False)
         QApplication.setEffectEnabled(Qt.UIEffect.UI_AnimateMenu, False)
@@ -677,6 +717,7 @@ class PlayerWindow(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
+        ensure_taskbar_minimize(self)
         set_topmost(self, self.config['always_on_top'])
         QTimer.singleShot(0, self.sync_overlays)
 
@@ -706,6 +747,8 @@ class PlayerWindow(QWidget):
     def changeEvent(self, event):
         super().changeEvent(event)
         if event.type() == QEvent.Type.WindowStateChange:
+            if hasattr(self, 'toast'):
+                self.apply_opacity()
             QTimer.singleShot(0, self.sync_overlays)
 
     def closeEvent(self, event):
@@ -799,15 +842,24 @@ class PlayerWindow(QWidget):
         self.queue_save()
 
     def set_opacity(self, value, save=True):
+        if self.isFullScreen():
+            self.apply_opacity()
+            return
         self.config['opacity'] = max(20, min(100, int(value)))
-        alpha = self.config['opacity'] / 100
+        self.apply_opacity()
+        if save:
+            self.queue_save()
+
+    def apply_opacity(self):
+        alpha = 1.0 if self.isFullScreen() else self.config['opacity'] / 100
         self.setWindowOpacity(alpha)
         for tile in self.tiles:
             tile.overlay.setWindowOpacity(alpha)
         self.chrome.setWindowOpacity(alpha)
         self.toast.setWindowOpacity(alpha)
-        if save:
-            self.queue_save()
+
+    def audio_muted(self, camera):
+        return bool(self.config.get('master_muted', False) or camera['muted'])
 
     def set_volume(self, index, value):
         camera = self.camera_for_slot(index)
@@ -1019,6 +1071,7 @@ class PlayerWindow(QWidget):
         else:
             self.restore_focus()
         self.showFullScreen()
+        self.apply_opacity()
         QTimer.singleShot(0, self.sync_overlays)
         for tile in self.tiles:
             tile.overlay.refresh()
@@ -1035,6 +1088,7 @@ class PlayerWindow(QWidget):
                 and previous < self.config['layout']):
             self.single_view(previous)
         self.showNormal()
+        self.apply_opacity()
         self.fullscreen_geometry = None
         self.fullscreen_previous_focus = None
         self.fullscreen_entry_layout = None
@@ -1053,13 +1107,13 @@ class PlayerWindow(QWidget):
             self.exit_fullscreen()
 
     def mute_all(self):
-        for camera in self.config['cameras']:
-            camera['muted'] = True
+        self.config['master_muted'] = not self.config.get('master_muted', False)
         for index, tile in enumerate(self.tiles):
             camera = self.camera_for_slot(index)
             if camera:
                 tile.apply_audio(camera)
             tile.overlay.refresh()
+        self.chrome.refresh()
         self.queue_save()
 
     def show_help(self):
@@ -1077,11 +1131,14 @@ class PlayerWindow(QWidget):
                 '기본 1분할에서는 이전·다음 사용 중인 카메라\n'
                 'F11: 선택 화면 전체화면 / 선택 없으면 분할 전체화면\n'
                 '전체화면에서 F11: 이전 창 상태 복원\nAlt / Alt+A: 앱 도구 표시\n'
-                '1 / 2 / 4: 화면 구성\nM: 선택 영상 음소거\nCtrl+Shift+M: 모든 카메라 음소거\n'
+                '1 / 2 / 4: 화면 구성\nM: 선택 영상 음소거\nCtrl+Shift+M: 전체 음소거 / 해제\n'
                 'Ctrl+R: 선택 영상 재연결\nCtrl+M: 카메라 관리\nCtrl+T: 항상 위 켜기·끄기\n'
                 'Ctrl+0: 투명도 0%로 복원\nF1: 이 도움말\n\n'
                 '단축키는 CamFloat가 활성화되어 있을 때 동작합니다.\n'
                 '선택이 없으면 M·Ctrl+R은 동작하지 않습니다.\n'
+                '전체 음소거를 해제하면 카메라별 음소거 설정을 유지합니다.\n'
+                '전체화면에서는 투명도 0% / 창 복귀 시 기존 값 복원\n'
+                '작은 화면: 스피커에 마우스를 올려 세로 음량 조절 / 휠 5%\n'
                 '첫 연결 실패는 수동 재시도만 가능합니다.\n'
                 '정상 재생 후 끊긴 경우에만 2~30초 간격으로 자동 재시도합니다.')
 
@@ -1129,10 +1186,6 @@ class PlayerWindow(QWidget):
                 action.setChecked(camera['quality'] == label)
                 quality_group.addAction(action)
                 action.triggered.connect(lambda checked=False, q=label: self.set_quality(index, q))
-            mute = menu.addAction(icon('muted'), menu_text('이 영상 음소거 해제' if camera['muted'] else '이 영상 음소거', 'M'))
-            mute.setCheckable(True)
-            mute.setChecked(camera['muted'])
-            mute.triggered.connect(lambda: self.toggle_mute(index))
             volume_menu = menu.addMenu(icon('volume'), '이 영상 음량')
             volume_widget = QWidget()
             volume_box = QVBoxLayout(volume_widget)
@@ -1148,6 +1201,10 @@ class PlayerWindow(QWidget):
             volume_action = QWidgetAction(volume_menu)
             volume_action.setDefaultWidget(volume_widget)
             volume_menu.addAction(volume_action)
+            mute = menu.addAction(icon('muted'), menu_text('이 영상 음소거 해제' if camera['muted'] else '이 영상 음소거', 'M'))
+            mute.setCheckable(True)
+            mute.setChecked(camera['muted'])
+            mute.triggered.connect(lambda: self.toggle_mute(index))
             menu.addAction(icon('refresh'), menu_text('이 영상 다시 연결', 'Ctrl+R'), lambda: self.reconnect(index))
             if self.config['layout'] > 1:
                 menu.addAction(icon('enlarge'), menu_text('이 화면만 크게 보기', '더블클릭'), lambda: self.single_view(index))
@@ -1169,14 +1226,20 @@ class PlayerWindow(QWidget):
             action.setChecked(self.config['layout'] == count)
             layout_group.addAction(action)
             action.triggered.connect(lambda checked=False, n=count: self.set_layout(n))
-        top = menu.addAction(icon('pin'), menu_text(TOPMOST, 'Ctrl+T'))
-        top.setCheckable(True)
-        top.setChecked(self.config['always_on_top'])
-        top.triggered.connect(self.set_always_on_top)
+        menu.addAction(icon('muted' if self.config['master_muted'] else 'volume'),
+            menu_text(master_mute_name(self.config['master_muted']), 'Ctrl+Shift+M'), self.mute_all)
         menu.addAction(icon('cameras'), menu_text(CAMERAS, 'Ctrl+M'), self.manage_cameras)
         menu.addAction(icon('restore' if self.isFullScreen() else 'fullscreen'),
-                       menu_text(fullscreen_name(self.isFullScreen()), 'F11'), self.toggle_layout_fullscreen)
+            menu_text(fullscreen_name(self.isFullScreen()), 'F11'), self.toggle_layout_fullscreen)
         menu.addSeparator()
+        menu.addAction(icon('pin'), menu_text(topmost_name(self.config['always_on_top']), 'Ctrl+T'),
+            lambda: self.set_always_on_top(not self.config['always_on_top']))
+        hardware_enabled = self.config['hardware_acceleration'] and self.playback_profile != 'cpu'
+        hardware = menu.addAction(icon('chip'), hardware_name(hardware_enabled),
+            lambda: self.set_hardware(not self.config['hardware_acceleration']))
+        if self.playback_profile == 'cpu':
+            hardware.setEnabled(False)
+            hardware.setToolTip('CPU 출력 모드에서는 하드웨어 가속을 사용하지 않습니다.')
         opacity_menu = menu.addMenu(icon('opacity'), OPACITY)
         widget = QWidget()
         box = QVBoxLayout(widget)
@@ -1193,13 +1256,14 @@ class PlayerWindow(QWidget):
         action.setDefaultWidget(widget)
         opacity_menu.addAction(action)
         opacity_menu.addAction(menu_text('불투명하게 복원', 'Ctrl+0'), lambda: self.set_opacity(100))
-        hardware = switch_action(menu, '하드웨어 가속',
-            self.config['hardware_acceleration'] and self.playback_profile != 'cpu', self.set_hardware)
-        if self.playback_profile == 'cpu':
-            hardware.setEnabled(False)
-            hardware.setToolTip('CPU 출력 모드에서는 하드웨어 가속을 사용하지 않습니다.')
+        if self.isFullScreen():
+            opacity_label.setText('투명도 0% · 전체화면')
+            slider.blockSignals(True)
+            slider.setValue(0)
+            slider.blockSignals(False)
+            slider.setEnabled(False)
+            opacity_menu.actions()[-1].setEnabled(False)
         menu.addSeparator()
-        menu.addAction(icon('muted'), menu_text('모든 카메라 음소거', 'Ctrl+Shift+M'), self.mute_all)
         menu.addAction(icon('help'), menu_text('사용법 / 단축키', 'F1'), self.show_help)
         menu.addAction(icon('minimize'), '최소화', self.showMinimized)
         menu.addAction(icon('close'), menu_text('종료', 'Alt+F4'), self.close)
@@ -1339,13 +1403,31 @@ def main():
                         assert window.tiles[0].player.is_playing()
                 window.set_opacity(65)
                 assert abs(window.windowOpacity() - .65) < .01
+                window.toggle_layout_fullscreen()
+                app.processEvents()
+                assert window.windowOpacity() == 1.0 and window.config['opacity'] == 65
+                window.handle_escape()
+                assert abs(window.windowOpacity() - .65) < .01
                 window.set_opacity(100)
+                individual_mutes = [c['muted'] for c in window.config['cameras']]
+                window.mute_all()
+                assert window.config['master_muted']
+                window.mute_all()
+                assert [c['muted'] for c in window.config['cameras']] == individual_mutes
                 assert crypt(crypt('roundtrip'), decrypt=True) == 'roundtrip'
                 taskbar = taskbar_icon_state(window)
                 assert taskbar['small'] and taskbar['large'] and not taskbar['tool_window'], taskbar
+                assert taskbar_can_minimize(window)
+                system_minimize(window)
+                app.processEvents()
+                assert window.isMinimized() and all(not t.overlay.isVisible() for t in window.tiles)
+                window.activate()
+                app.processEvents()
+                assert not window.isMinimized()
                 report.update(ok=True, layouts=[1, 2, 4], topmost=True, stable_video_handles=True,
                               opacity=True, dpapi=True, vlc=True, sample_video_streams=video_streams,
-                              taskbar_icon=taskbar)
+                              taskbar_icon=taskbar, taskbar_system_minimize=True,
+                              fullscreen_opacity_lock=True, master_mute_preserves_individual=True)
                 code = 0
             except Exception:
                 report['error'] = traceback.format_exc()

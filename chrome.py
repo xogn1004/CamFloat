@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QToolButton, QWidget
 
 from icons import icon
 from native_window import set_topmost
-from menu_labels import CAMERAS, TOPMOST, fullscreen_name, tooltip
+from menu_labels import CAMERAS, fullscreen_name, topmost_name, master_mute_name, tooltip
 
 
 PANEL_STYLE = '''QFrame#panel{background:rgba(19,24,33,242);border:1px solid rgba(174,194,223,42);
@@ -27,7 +27,8 @@ class AppChrome(QWidget):
         self.setWindowTitle('CamFloat · 앱 도구')
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
-        self.resize(242, 36)
+        self.resize(270, 36)
+        self.last_state = None
         self.panel = QFrame(self)
         self.panel.setObjectName('panel')
         self.panel.setGeometry(self.rect())
@@ -46,11 +47,18 @@ class AppChrome(QWidget):
         separator.setStyleSheet('background:rgba(174,194,223,35);border:0;')
         row.addWidget(separator)
         row.addSpacing(3)
-        self.pin = self.button(row, 'pin', tooltip(TOPMOST, 'Ctrl+T'),
-                               lambda: host.set_always_on_top(not host.config['always_on_top']))
-        self.pin.setCheckable(True)
+        self.master_mute = self.button(row, 'volume', tooltip('전체 음소거', 'Ctrl+Shift+M'), host.mute_all)
+        self.master_mute.setCheckable(True)
         self.manager = self.button(row, 'cameras', tooltip(CAMERAS, 'Ctrl+M'), host.manage_cameras)
         self.fullscreen = self.button(row, 'fullscreen', tooltip('전체화면', 'F11'), host.toggle_layout_fullscreen)
+        separator = QFrame()
+        separator.setFixedSize(1, 18)
+        separator.setStyleSheet('background:rgba(174,194,223,35);border:0;')
+        row.addWidget(separator)
+        row.addSpacing(3)
+        self.pin = self.button(row, 'pin', tooltip('항상 위에', 'Ctrl+T'),
+                               lambda: host.set_always_on_top(not host.config['always_on_top']))
+        self.pin.setCheckable(True)
         self.more = self.button(row, 'more', tooltip('앱 메뉴', 'Alt / Alt+A'), self.show_menu)
         self.deadline = 0
         self.menu_open = False
@@ -72,9 +80,20 @@ class AppChrome(QWidget):
         return item
 
     def refresh(self):
+        state = (self.host.config['layout'], self.host.config['always_on_top'],
+                 self.host.isFullScreen(), self.host.config.get('master_muted', False))
+        if state == self.last_state:
+            return
+        self.last_state = state
         for count, button in self.layout_buttons.items():
             button.setChecked(count == self.host.config['layout'])
         self.pin.setChecked(self.host.config['always_on_top'])
+        self.pin.setToolTip(tooltip(topmost_name(state[1]), 'Ctrl+T'))
+        self.pin.setAccessibleName(self.pin.toolTip())
+        self.master_mute.setChecked(state[3])
+        self.master_mute.setIcon(icon('muted' if state[3] else 'volume'))
+        self.master_mute.setToolTip(tooltip(master_mute_name(state[3]), 'Ctrl+Shift+M'))
+        self.master_mute.setAccessibleName(self.master_mute.toolTip())
         self.fullscreen.setIcon(icon('restore' if self.host.isFullScreen() else 'fullscreen'))
         self.fullscreen.setToolTip(tooltip(fullscreen_name(self.host.isFullScreen()), 'F11'))
         self.fullscreen.setAccessibleName(self.fullscreen.toolTip())
@@ -92,7 +111,7 @@ class AppChrome(QWidget):
             return
         self.position()
         self.refresh()
-        self.deadline = time.monotonic() + 2.2
+        self.deadline = time.monotonic() + 1.6
         if not self.isVisible():
             self.show()
             set_topmost(self, self.host.config['always_on_top'])

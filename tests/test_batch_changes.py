@@ -23,25 +23,25 @@ class BatchChanges(unittest.TestCase):
             QTest.qWait(40)
         return bool(predicate())
 
-    def test_menu_names_order_icons_shortcuts_and_hardware_switch(self):
+    def test_menu_names_order_icons_shortcuts_and_hardware_action(self):
         menu = self.window.build_app_menu()
         actions = [a for a in menu.actions() if not a.isSeparator()]
         names = [a.text().split('\t')[0] for a in actions]
-        self.assertEqual(names[:4], [LAYOUT, TOPMOST, CAMERAS, '전체화면'])
+        self.assertEqual(names[:7], [LAYOUT, '전체 음소거', CAMERAS, '전체화면',
+            '항상 위에 해제', '하드웨어 가속 해제', OPACITY])
         self.assertEqual(sum('CamFloat' in name for name in names), 1)
         self.assertIn(OPACITY, names)
-        self.assertEqual(actions[1].text().split('\t')[1], 'Ctrl+T')
+        self.assertEqual(actions[4].text().split('\t')[1], 'Ctrl+T')
         self.assertEqual(actions[2].text().split('\t')[1], 'Ctrl+M')
         for index in range(4):
             self.assertFalse(actions[index].icon().isNull())
         for index, action in enumerate(actions[0].menu().actions()):
             self.assertEqual(action.text(), f'{(1, 2, 4)[index]}분할\t{(1, 2, 4)[index]}')
             self.assertFalse(action.icon().isNull())
-        hardware = next(a for a in actions if a.text() == '하드웨어 가속')
-        self.assertTrue(hardware.switch.isChecked())
-        hardware.switch.click()
+        hardware = next(a for a in actions if a.text() == '하드웨어 가속 해제')
+        self.assertFalse(hardware.isCheckable())
+        hardware.trigger()
         self.assertFalse(self.window.config['hardware_acceleration'])
-        self.assertFalse(hardware.switch.isChecked())
         chrome = self.window.chrome
         self.assertTrue(all(button.text() == '' and not button.icon().isNull()
                             for button in chrome.layout_buttons.values()))

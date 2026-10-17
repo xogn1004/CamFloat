@@ -9,6 +9,8 @@ user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctyp
 user32.SetWindowPos.restype = wintypes.BOOL
 user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
 user32.GetWindowLongW.restype = ctypes.c_long
+user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, ctypes.c_long]
+user32.SetWindowLongW.restype = ctypes.c_long
 user32.GetForegroundWindow.restype = wintypes.HWND
 user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
 user32.GetWindowThreadProcessId.restype = wintypes.DWORD
@@ -48,3 +50,31 @@ def set_topmost(widget, enabled):
 
 def is_topmost(widget):
     return bool(user32.GetWindowLongW(int(widget.winId()), -20) & 0x00000008)
+
+
+def ensure_taskbar_minimize(widget):
+    """Frameless Qt windows need WS_MINIMIZEBOX/SYSMENU for shell toggling.
+
+    Apply styles in place: never recreate the HWND which owns the VLC children.
+    """
+    hwnd = int(widget.winId())
+    style = user32.GetWindowLongW(hwnd, -16)
+    wanted = style | 0x00020000 | 0x00080000
+    if wanted != style:
+        ctypes.set_last_error(0)
+        previous = user32.SetWindowLongW(hwnd, -16, wanted)
+        if previous == 0 and ctypes.get_last_error():
+            raise ctypes.WinError(ctypes.get_last_error())
+        if not user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0004 | 0x0010 | 0x0020):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+
+def taskbar_can_minimize(widget):
+    return bool(user32.GetWindowLongW(int(widget.winId()), -16) & 0x00020000)
+
+
+def system_minimize(widget):
+    """Exercise the native minimize command also used by the Windows shell."""
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.SendMessageW.restype = ctypes.c_ssize_t
+    user32.SendMessageW(int(widget.winId()), 0x0112, 0xF020, 0)
