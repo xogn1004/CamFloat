@@ -99,6 +99,12 @@ class WindowTests(unittest.TestCase):
             self.window.set_always_on_top(enabled)
             self.app.processEvents()
             self.assertEqual(is_topmost(self.window), enabled)
+            for tile in self.window.tiles[:self.window.config['layout']]:
+                self.assertEqual(is_topmost(tile.overlay), enabled)
+            self.window.chrome.reveal()
+            self.app.processEvents()
+            self.assertEqual(is_topmost(self.window.chrome), enabled)
+            self.assertEqual(is_topmost(self.window), enabled)
             self.assertEqual(handles, [int(tile.winId()) for tile in self.window.tiles])
             self.assertTrue(self.window.tiles[0].player.is_playing())
         for opacity in (100, 60, 20, 100):
@@ -116,6 +122,10 @@ class WindowTests(unittest.TestCase):
             self.assertEqual(sum(t.overlay.isVisible() for t in self.window.tiles), count)
             for index, tile in enumerate(self.window.tiles[:count]):
                 self.assertEqual(tile.overlay.geometry(), QRect(tile.mapToGlobal(QPoint(0, 0)), tile.size()))
+                # Layout changes intentionally retain a valid selection. A
+                # second click on the same selected SCREEN deselects it.
+                # Start this selection assertion from an unselected state.
+                self.window.select_slot(None)
                 QTest.mouseClick(tile.overlay, Qt.MouseButton.LeftButton, pos=tile.overlay.rect().center())
                 self.assertEqual(self.window.selected, index)
                 menu = self.window.build_context_menu(index)

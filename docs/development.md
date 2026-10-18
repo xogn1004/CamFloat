@@ -30,6 +30,7 @@ cd CamFloat
 ```
 
 ZIP에는 EXE, 런타임, 라이선스, 시작 안내만 들어갑니다. 사용자 설정과 개발 문서는 포함하지 않습니다.
+`release/`는 최신 `CamFloat/` 실행 폴더·ZIP·체크섬만 보관하는 것을 원칙으로 합니다. GitHub 배포에 따로 첨부할 외부 라이브러리 소스 자료는 `vendor/source-assets/`에 보관합니다.
 Qt의 PDF·QML·가상 키보드 등 사용하지 않는 부품은 제외합니다. 앱은 QWidget과 libVLC의 네이티브 영상 출력을 사용합니다.
 
 ## 검사 원칙

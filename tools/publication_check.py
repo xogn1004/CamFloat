@@ -127,7 +127,7 @@ def asset_check():
         exe_hash = hashlib.sha256(bundle.read('CamFloat/CamFloat.exe')).hexdigest()
     source_manifest = json.loads((ROOT / 'docs/third-party-sources.json').read_text())
     for item in source_manifest:
-        path = ROOT / 'release/source-assets' / item['file']
+        path = ROOT / 'vendor/source-assets' / item['file']
         assert path.stat().st_size == item['bytes'] and sha256(path) == item['sha256']
         assert item['upstream_checksum_verified']
     return dict(archive_sha256=sha256(archive), archive_bytes=archive.stat().st_size,

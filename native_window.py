@@ -2,6 +2,7 @@
 import ctypes
 import os
 from ctypes import wintypes
+from camera_model import APP_USER_MODEL_ID
 
 user32 = ctypes.WinDLL('user32', use_last_error=True)
 user32.SetWindowPos.argtypes = [wintypes.HWND, wintypes.HWND, ctypes.c_int, ctypes.c_int,
@@ -50,7 +51,7 @@ def configure_app_identity():
     shell32 = ctypes.WinDLL('shell32', use_last_error=True)
     shell32.SetCurrentProcessExplicitAppUserModelID.argtypes = [wintypes.LPCWSTR]
     shell32.SetCurrentProcessExplicitAppUserModelID.restype = ctypes.c_long
-    result = shell32.SetCurrentProcessExplicitAppUserModelID('CamFloat.Desktop.Player')
+    result = shell32.SetCurrentProcessExplicitAppUserModelID(APP_USER_MODEL_ID)
     if result < 0:
         raise OSError(f'AppUserModelID failed: {result:#x}')
 
@@ -66,8 +67,10 @@ def taskbar_icon_state(widget):
 
 
 def set_topmost(widget, enabled):
+    # Owned overlays must not reorder/demote their owner as a side effect.
+    # Match Qt's use of SWP_NOOWNERZORDER when changing native topmost state.
     if not user32.SetWindowPos(int(widget.winId()), ctypes.c_void_p(-1 if enabled else -2),
-                              0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010):
+                              0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010 | 0x0200):
         raise ctypes.WinError(ctypes.get_last_error())
 
 

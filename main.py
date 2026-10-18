@@ -879,14 +879,18 @@ class PlayerWindow(QWidget):
 
     def set_always_on_top(self, enabled):
         # Preserve all VLC video HWNDs. Qt setWindowFlags would recreate them.
-        set_topmost(self, enabled)
+        # Native stacking changes can synchronously deliver Qt events. Those
+        # handlers must see the new state when they show/sync owned overlays.
+        self.config['always_on_top'] = bool(enabled)
         for index, tile in enumerate(self.tiles):
             if index < self.config['layout'] and tile.overlay.isVisible():
                 set_topmost(tile.overlay, enabled)
-        self.config['always_on_top'] = bool(enabled)
         for widget in (self.chrome,):
             if widget.isVisible():
                 set_topmost(widget, enabled)
+        # Demoting an owned window can also demote its owner on Windows; apply
+        # the final owner state after all owned windows have been updated.
+        set_topmost(self, enabled)
         self.chrome.refresh()
         self.queue_chrome_front()
         self.queue_save()
@@ -1588,13 +1592,19 @@ def main():
                 window.close()
                 app.exit(code)
         QTimer.singleShot(1500 if demo else 300, verify)
-    elif LOAD_WARNINGS:
-        def show_recovery():
-            with window.modal():
-                QMessageBox.warning(window, '설정 복구', '\n'.join(LOAD_WARNINGS))
-        QTimer.singleShot(300, show_recovery)
-    elif not config['cameras']:
-        QTimer.singleShot(300, window.manage_cameras)
+    elif not demo:
+        def finish_startup():
+            if window.closing:
+                return
+            if LOAD_WARNINGS:
+                with window.modal():
+                    QMessageBox.warning(window, '설정 복구', '\n'.join(LOAD_WARNINGS))
+            if getattr(sys, 'frozen', False) and not window.config['shortcuts_prompted']:
+                from startup_shortcuts import maybe_offer_shortcuts
+                maybe_offer_shortcuts(window)
+            if not window.closing and not window.config['cameras']:
+                window.manage_cameras()
+        QTimer.singleShot(300, finish_startup)
     code = app.exec()
     if diagnostics:
         diagnostics.close()

@@ -16,6 +16,7 @@ from urllib.parse import quote, unquote, urlsplit, urlunsplit
 
 APP_NAME = 'CamFloat'
 APP_TITLE = 'CamFloat - RTSP Stream Viewer'
+APP_USER_MODEL_ID = 'CamFloat.Desktop.Player'
 DLL_HANDLES = []
 LOAD_WARNINGS = []
 
@@ -86,7 +87,7 @@ def new_camera(name='', url=''):
 def default_config():
     return dict(version=4, cameras=[], slots=[None] * 4, layout_slots=None, layout=1, split_orientation='horizontal', always_on_top=False,
                 hardware_acceleration=True, master_muted=False, opacity=80, geometry=None,
-                verify_connection_info=True)
+                verify_connection_info=True, shortcuts_prompted=False)
 
 
 def reset_settings(cameras):
@@ -165,6 +166,9 @@ def normalize(raw, encrypted=False):
     if not isinstance(raw, dict):
         raise ValueError('설정 형식이 올바르지 않습니다.')
     result = default_config()
+    # Existing settings predate onboarding; only a missing file or an explicit
+    # reset should ask. A saved False survives until the next startup offer.
+    result['shortcuts_prompted'] = bool(raw.get('shortcuts_prompted', True))
     for key in ('always_on_top', 'hardware_acceleration'):
         result[key] = bool(raw.get(key, result[key]))
     result['master_muted'] = bool(raw.get('master_muted', False))
