@@ -17,7 +17,7 @@ PROFILES = {
     'files': ('test_camera_archive',),
     'window': ('test_layout_sessions', 'test_view_ui', 'test_chrome_gestures'),
     'shortcuts': ('test_startup_shortcuts',),
-    'ptz': ('test_camera_ptz_trial',),
+    'ptz': ('test_camera_ptz_trial', 'test_camera_onvif_trial'),
     'full': (),
 }
 DESCRIPTIONS = {

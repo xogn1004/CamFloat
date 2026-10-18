@@ -65,6 +65,8 @@ cd CamFloat
 
 검사에는 임시 설정 폴더와 합성 카메라·영상을 사용합니다. 실제 사용자 설정이나 카메라에 접속하지 않습니다. 결과와 로그는 `verification/current/checks/<영역>/latest.json`, `latest.log`에 덮어써 기록합니다. 실행 범위·개수·시간·생략 범위를 확인할 수 있습니다. 개별 테스트 모듈은 기존 unittest 명령으로도 실행할 수 있습니다.
 
+별도의 실제 카메라 회전 시험은 `camera-control-test.bat`입니다. 일반 검사 명령에 포함되지 않으며 사용자가 대상을 선택하고 이동을 요청할 때만 조작합니다. `--probe`는 기능 조회만 수행합니다. [지원 조사와 시험 방법](post-release-plan.md#후속-onvif-조사와-시험-도구)을 먼저 확인하세요.
+
 ### 릴리즈 전체 검사
 
 ```powershell

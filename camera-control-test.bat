@@ -7,7 +7,7 @@ if not exist ".venv\Scripts\python.exe" (
   pause
   exit /b 2
 )
-".venv\Scripts\python.exe" -B -X utf8 tools/camera_ptz_trial.py %*
+".venv\Scripts\python.exe" -B -X utf8 tools/camera_onvif_trial.py %*
 set "trial_exit=%errorlevel%"
 pause
 exit /b %trial_exit%
