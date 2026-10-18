@@ -104,10 +104,11 @@ def trial(camera, path='/onvif0', literal_length=True, send_tone=True,
     return result
 
 
-def save(results):
+def save(results, probe=False):
     folder = ROOT / 'verification/current/camera-control'
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / 'talkback-manual-latest.json').write_text(json.dumps(results[-30:], indent=2) + '\n', encoding='utf-8')
+    filename = 'talkback-probe-latest.json' if probe else 'talkback-manual-latest.json'
+    (folder / filename).write_text(json.dumps(results[-30:], indent=2) + '\n', encoding='utf-8')
 
 
 def seconds_argument(value, lower, upper):
@@ -152,7 +153,7 @@ def main(argv=None):
         return 1
     if args.probe:
         result = trial(cameras[0], send_tone=False)
-        save([result])
+        save([result], probe=True)
         print(json.dumps(result, indent=2))
         return 0
     print('\nCamFloat · 카메라 스피커 시험\n')

@@ -187,10 +187,11 @@ def pulse(client, pan):
     return result
 
 
-def save(results):
+def save(results, probe=False):
     folder = ROOT / 'verification/current/camera-control'
     folder.mkdir(parents=True, exist_ok=True)
-    (folder / 'onvif-manual-latest.json').write_text(json.dumps(results[-50:], indent=2) + '\n', encoding='utf-8')
+    filename = 'onvif-probe-latest.json' if probe else 'onvif-manual-latest.json'
+    (folder / filename).write_text(json.dumps(results[-50:], indent=2) + '\n', encoding='utf-8')
 
 
 def main(argv=None):
@@ -200,7 +201,7 @@ def main(argv=None):
     cameras = load_cameras()
     if args.probe:
         reports = [{'camera_number': c['number'], **Client(c).discover()} for c in cameras]
-        save(reports)
+        save(reports, probe=True)
         print(json.dumps(reports, indent=2))
         return 0
     print('\nCamFloat · ONVIF 회전 시험\n')

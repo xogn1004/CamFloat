@@ -4,6 +4,8 @@ import argparse
 import io
 from contextlib import redirect_stdout
 import struct
+import tempfile
+from pathlib import Path
 from urllib.parse import urlsplit
 import unittest
 from unittest.mock import patch
@@ -139,6 +141,14 @@ class TalkbackTrialTests(unittest.TestCase):
             trial.countdown(12, sleeper=waits.append)
             trial.countdown(0, sleeper=waits.append)
         self.assertEqual(waits, [1] * 12)
+
+    def test_probe_report_does_not_overwrite_manual_observations(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(trial, 'ROOT', Path(folder)):
+            trial.save([{'physical_result': 'heard'}])
+            trial.save([{'frames_sent': 0}], probe=True)
+            base = Path(folder) / 'verification/current/camera-control'
+            self.assertEqual(json.loads((base / 'talkback-manual-latest.json').read_text()), [{'physical_result': 'heard'}])
+            self.assertEqual(json.loads((base / 'talkback-probe-latest.json').read_text()), [{'frames_sent': 0}])
 
 
 if __name__ == '__main__':

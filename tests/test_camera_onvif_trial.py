@@ -2,6 +2,8 @@
 import base64
 import hashlib
 import json
+import tempfile
+from pathlib import Path
 from urllib.parse import urlsplit
 import unittest
 from unittest.mock import patch
@@ -117,6 +119,14 @@ class ONVIFTrialTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             trial.pulse(Client(), 1)
         self.assertEqual(calls.count('Stop'), 2)
+
+    def test_probe_report_preserves_manual_motion_observations(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(trial, 'ROOT', Path(folder)):
+            trial.save([{'physical_result': 'moved_and_stopped'}])
+            trial.save([{'capabilities_verified': True}], probe=True)
+            base = Path(folder) / 'verification/current/camera-control'
+            self.assertEqual(json.loads((base / 'onvif-manual-latest.json').read_text()), [{'physical_result': 'moved_and_stopped'}])
+            self.assertEqual(json.loads((base / 'onvif-probe-latest.json').read_text()), [{'capabilities_verified': True}])
 
 
 if __name__ == '__main__':
