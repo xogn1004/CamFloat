@@ -192,8 +192,10 @@ class UIRegressions(unittest.TestCase):
         self.window.set_volume(0, 1000)
         self.assertEqual(self.window.camera_for_slot(0)['volume'], 100)
         self.window.mute_all()
-        self.assertTrue(all(camera['muted'] for camera in self.window.config['cameras']))
-        self.assertIn('해제', self.window.tiles[0].overlay.mute.toolTip())
+        self.assertFalse(self.window.camera_for_slot(0)['muted'])
+        self.assertTrue(self.window.config['master_muted'])
+        self.assertTrue(all(self.window.audio_muted(camera) for camera in self.window.config['cameras']))
+        self.assertIn('전체 음소거 중', self.window.tiles[0].overlay.mute.toolTip())
         self.assertFalse(self.window.tiles[0].overlay.mute.icon().isNull())
 
     def test_real_vlc_audio_track_volume_and_muted_state(self):
@@ -204,10 +206,10 @@ class UIRegressions(unittest.TestCase):
         self.assertGreaterEqual(player.audio_get_track_count(), 2)
         self.window.set_volume(0, 37)
         deadline = time.monotonic() + 3
-        while (player.audio_get_volume() != 37 or not player.audio_get_mute()) and time.monotonic() < deadline:
+        while (player.audio_get_volume() != 37 or player.audio_get_mute()) and time.monotonic() < deadline:
             QTest.qWait(50)
         self.assertEqual(player.audio_get_volume(), 37)
-        self.assertTrue(player.audio_get_mute())
+        self.assertFalse(player.audio_get_mute())
 
     def test_rapid_layout_quality_hardware_changes_then_recovery(self):
         handles = [int(tile.winId()) for tile in self.window.tiles]

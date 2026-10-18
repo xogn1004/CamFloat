@@ -101,6 +101,7 @@ def working_set():
 app = QApplication([])
 instance = make_vlc_instance(find_vlc_directory())
 report = {'version': VERSION, 'ok': False}
+check_audio = os.environ.get('CAMFLOAT_QA_AUDIO') == '1'
 server = None
 window = None
 ticks = []
@@ -117,10 +118,24 @@ try:
     config['cameras'] = [new_camera(f'RTSP QA {i + 1}', 'rtsp://127.0.0.1:18554/stream') for i in range(4)]
     for camera in config['cameras']:
         camera['muted'] = True
+    if check_audio:
+        for camera, volume, muted in zip(config['cameras'], (100, 0, 40, 25), (False, False, True, False)):
+            camera.update(volume=volume, muted=muted)
     config['slots'] = [c['id'] for c in config['cameras']]
     config['layout'] = 4
     window = PlayerWindow(config, instance, persist=False)
     window.show()
+    def verify_audio():
+        cameras = [window.camera_for_slot(i) for i in range(window.config['layout'])]
+        expected = ([c['volume'] for c in cameras], [int(window.audio_muted(c)) for c in cameras])
+        def matches():
+            if any(t.worker.busy or t.worker.done.is_set() for t in window.tiles[:len(cameras)]):
+                return False
+            actual = ([t.player.audio_get_volume() for t in window.tiles[:len(cameras)]],
+                      [t.player.audio_get_mute() for t in window.tiles[:len(cameras)]])
+            return actual == expected
+        assert wait_for(matches, 4), 'Per-screen audio output differs from configured volume/mute'
+        report['independent_audio_checkpoints'] = report.get('independent_audio_checkpoints', 0) + 1
     timer = QTimer(window)
     timer.timeout.connect(lambda: ticks.append(time.monotonic()))
     timer.start(50)
@@ -134,6 +149,8 @@ try:
         ever=[t.ever_played for t in window.tiles], failed=[t.initial_failed for t in window.tiles])
     assert recorded, 'Successful playback was not recorded'
     report['initial_four_streams'] = True
+    if check_audio:
+        verify_audio()
     # Check image pixels, not just advancing decoder counters or playback clocks.
     from PySide6.QtGui import QImage
     images = ROOT / 'verification' / 'current' / 'v100' / 'network'
@@ -157,6 +174,8 @@ try:
         window.single_view(index)
         QTest.qWait(100)
         assert playing(), 'Enlarging a screen interrupted playback'
+        if check_audio:
+            verify_audio()
         assert [t.worker.revision for t in window.tiles] == revisions, 'Enlargement started a new session'
     window.restore_focus()
     # Both fullscreen routes must preserve all four RTSP sessions too.
@@ -194,6 +213,8 @@ try:
         QTest.qWait(1100)
         assert second.player.get_time() != clock
         assert second.worker.revision == second_revision and id(second.player) == second_player
+        if check_audio:
+            verify_audio()
     report['two_stream_paused_reload_three_times'] = True
     window.set_layout(4)
     assert wait_for(playing, 20)
@@ -210,6 +231,8 @@ try:
     window.set_opacity(100)
     server = start_server()
     assert wait_for(playing, 45), 'RTSP automatic recovery failed'
+    if check_audio:
+        verify_audio()
     report['automatic_recovery_four_streams'] = True
     report['stable_native_handles'] = handles == [int(t.winId()) for t in window.tiles]
     for count in (1, 2, 4):
@@ -233,6 +256,8 @@ try:
                 retries=[t.retry_count for t in window.tiles], busy=[t.worker.busy for t in window.tiles],
                 working_set_mb=working_set())
             report['timeline'].append(entry)
+            if check_audio:
+                verify_audio()
             print(json.dumps(entry), flush=True)
             next_sample += 2
     report['final_states'] = [str(t.player.get_state()) for t in window.tiles]
@@ -246,6 +271,7 @@ try:
     report['ui_heartbeat_max_gap_ms'] = round(max(b - a for a, b in zip(ticks, ticks[1:])) * 1000, 2)
     assert report['ui_heartbeat_max_gap_ms'] < 1200, 'UI blocked for more than 1.2 seconds'
     report['ok'] = True
+    report['audio_isolation_checked'] = check_audio
 finally:
     if window:
         window.close()

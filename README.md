@@ -4,7 +4,7 @@ Windows에서 RTSP 카메라를 1·2·4분할로 재생하는 작은 플레이�
 
 ## 실행과 배포
 
-- 실행: `release/CamFloat/CamFloat.exe`
+- 실행: 최신 `release/CamFloat-1.0.0-win-x64.zip`의 압축을 모두 풀고 그 안의 `CamFloat.exe`를 실행하세요.
 - Windows 64비트용입니다. libVLC 3.0.23 재생 엔진이 포함되어 VLC 별도 설치 없이 실행합니다.
 - 배포할 때는 `_internal`과 `licenses`를 포함한 **CamFloat 폴더 전체**를 복사하세요.
 - 사용자 배포본에는 `CamFloat.exe`, `_internal/`, `licenses/`, `시작하기.txt`만 넣습니다. README·변경 이력·코드 리뷰·QA 및 빌드 보고서는 개발용으로 보관합니다.
@@ -44,7 +44,8 @@ Windows에서 RTSP 카메라를 1·2·4분할로 재생하는 작은 플레이�
 - 앱 메뉴 순서: **화면 구성 → 전체 음소거/해제 → 카메라 관리 → 전체화면 | 항상 위에/해제 → 하드웨어 가속/해제 → 전체 투명도**.
 - 선택 여부나 앱 포커스와 관계없이 화면·상단 아이콘에 약 0.5초 머물면 툴팁을 표시합니다. 메뉴를 열거나 마우스를 떼면 숨깁니다.
 - 작은 SCREEN에서는 스피커에 마우스를 올려 세로 음량 슬라이더를 엽니다. 스피커 클릭은 개별 음소거, 휠은 5%씩 음량 조절입니다.
-- 음량 0이면 × 스피커 아이콘, 1 이상이면 일반 아이콘입니다. 개별·전체 음소거 중에는 × 표시를 유지하며 음소거를 눌러도 음량 값은 바꾸지 않습니다.
+- 음량 0이면 × 스피커 아이콘, 1 이상이면 일반 아이콘입니다. 슬라이더·휠·음량 메뉴로 조절하면 해당 카메라의 개별 음소거를 해제합니다. 전체 음소거는 유지합니다. 스피커 클릭은 음량 값을 유지하고 음소거만 전환합니다.
+- Windows 음성 출력은 화면별 음량·음소거가 독립적으로 유지되는 DirectSound를 사용합니다. 확대해도 다른 화면 소리는 계속 재생합니다.
 - SCREEN 우클릭의 음량 메뉴는 음소거 메뉴 위에 있습니다.
 - 전체 음소거는 별도 마스터 상태입니다. 해제해도 카메라별로 꺼둔 음소거는 유지됩니다.
 - 전체화면에서는 **투명도 0%**로 고정됩니다. 전체화면에서도 투명도 설정을 바꿀 수 있으며 창 모드로 돌아오면 변경한 값을 적용합니다. 설정에는 `투명도 {설정값}% · 전체화면은 적용 안함`을 표시합니다.
@@ -90,10 +91,11 @@ Windows에서 RTSP 카메라를 1·2·4분할로 재생하는 작은 플레이�
 Python 3.14 / PySide6 6.12 / python-vlc / PyInstaller를 사용합니다. 의존성은 `requirements.txt`에 고정했습니다.
 
 - 빌드: `build.bat`. `prepare_vlc.py`가 고정한 공식 LGPL libVLC 패키지를 내려받고 SHA-256을 검사합니다. x64 런타임만 `vendor/vlc`에 준비해 포함하며, SDK와 VLC 데스크톱 앱은 포함하지 않습니다.
+- 앱 실행 중 별도 빌드: `build.bat --staged`. QA 후 `.venv/Scripts/python.exe package_release.py --staged --archive`로 같은 이름의 최신 ZIP을 만듭니다. 실행 중인 앱 폴더는 교체하지 않습니다.
 - 회귀 검사: `.venv/Scripts/python.exe -m unittest discover -s tests -p "test_*.py" -v`
 - 네트워크 검사: `tests/network_qa.py` (로컬 MediaMTX·FFmpeg와 `verification/rtsp-keyframes-test.mp4` 검사 영상 필요)
 - 시각 확인용 렌더: `tests/visual_qa.py`
-- 검사 보고서: `CODE_REVIEW.md`. 정식 버전의 회귀 검사 기록은 `verification/current/v100-tests.log`, HEVC RTSP 검사는 `verification/current/v100-network.log`, 배포 EXE 검사는 `verification/current/v100/packaged`에 보관합니다. 이전 RC 보고서는 당시 결과로만 보관합니다.
+- 검사 보고서: `CODE_REVIEW.md`. 음성 수정 재배포의 회귀 검사·RTSP 검사·배포 EXE 기록은 `verification/current/audio-investigation`에 보관합니다. 이전 1.0.0 후보와 RC 보고서는 당시 결과로만 보관합니다.
 - 중간 파일 정리: `clean_intermediates.ps1`의 허용 목록만 삭제합니다. 소스·Git·개발 환경·최종 배포본·사용자 설정은 보존합니다.
 
 일반 빌드는 과거 QA 결과를 복사하지 않습니다. 최종 배포 QA 요약은 해당 EXE의 자체 점검을 완료한 뒤 생성합니다. 변경 이력은 Git 커밋과 `CHANGELOG.md`로 관리합니다.

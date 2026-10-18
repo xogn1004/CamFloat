@@ -2,9 +2,11 @@
 
 import argparse
 import hashlib
+import os
 from pathlib import Path
 import re
 import shutil
+import stat
 import zipfile
 
 
@@ -19,7 +21,9 @@ DEVELOPMENT_FILES = (
 def prepare():
     if RELEASE.is_symlink() or RELEASE.is_junction():
         raise RuntimeError('Release directory must not be a linked directory.')
-    if RELEASE.resolve() != ROOT / 'release' / 'CamFloat':
+    allowed = [ROOT / 'release' / 'CamFloat',
+               Path(os.environ['LOCALAPPDATA']) / 'CamFloatBuild/current/dist/CamFloat']
+    if RELEASE.resolve() not in [path.resolve() for path in allowed]:
         raise RuntimeError('Release directory escaped the workspace.')
     if not (RELEASE / 'CamFloat.exe').is_file() or not (RELEASE / '_internal').is_dir():
         raise RuntimeError('Build release/CamFloat before packaging.')
@@ -42,6 +46,9 @@ def prepare():
     if license_dir.is_symlink() or license_dir.is_junction():
         raise RuntimeError('License directory must not be a linked directory.')
     shutil.copytree(ROOT / 'licenses', license_dir, dirs_exist_ok=True)
+    # Google Drive source folders can carry the Windows read-only directory
+    # flag. Do not make the next isolated PyInstaller build undeletable.
+    license_dir.chmod(license_dir.stat().st_mode | stat.S_IWRITE)
     shutil.copy2(ROOT / 'packaging' / '시작하기.txt', RELEASE / '시작하기.txt')
     print('Distribution: CamFloat.exe, _internal/, licenses/, 시작하기.txt')
 
@@ -77,7 +84,10 @@ def archive():
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--archive', action='store_true', help='Also refresh ZIP and SHA-256.')
+    parser.add_argument('--staged', action='store_true', help='Package the isolated build without replacing the running app.')
     args = parser.parse_args()
+    if args.staged:
+        RELEASE = Path(os.environ['LOCALAPPDATA']) / 'CamFloatBuild/current/dist/CamFloat'
     prepare()
     if args.archive:
         archive()

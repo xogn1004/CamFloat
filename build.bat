@@ -19,6 +19,7 @@ call ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean ^
   --distpath "%CAMFLOAT_STAGE%\dist" --workpath "%CAMFLOAT_STAGE%\work" CamFloat.spec
 if errorlevel 1 goto :failed
 
+if /i "%~1"=="--staged" goto :staged
 robocopy "%CAMFLOAT_STAGE%\dist\CamFloat" "%~dp0release\CamFloat" /E /COPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS
 if errorlevel 8 goto :failed
 call ".venv\Scripts\python.exe" package_release.py
@@ -27,6 +28,12 @@ if errorlevel 1 goto :failed
 echo.
 echo Build complete: release\CamFloat\CamFloat.exe
 echo The playback engine is included. No VLC installation is required.
+exit /b 0
+
+:staged
+call ".venv\Scripts\python.exe" package_release.py --staged
+if errorlevel 1 goto :failed
+echo Build complete: %CAMFLOAT_STAGE%\dist\CamFloat\CamFloat.exe
 exit /b 0
 
 :failed

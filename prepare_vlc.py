@@ -36,7 +36,11 @@ def prepare():
             if not path.is_relative_to(destination.resolve()):
                 raise RuntimeError('Unsafe runtime entry.')
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(archive.read(name))
+            data = archive.read(name)
+            # A source/QA process may be using this exact pinned DLL already.
+            # Avoid replacing identical files, which Windows locks while loaded.
+            if not path.is_file() or path.read_bytes() != data:
+                path.write_bytes(data)
     print('Staged official libVLC 3.0.23 x64 (LGPL package).')
 
 

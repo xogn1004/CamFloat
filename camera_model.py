@@ -452,6 +452,12 @@ def make_vlc_instance(folder, *options):
     os.environ['PYTHON_VLC_LIB_PATH'] = str(folder / 'libvlc.dll')
     os.environ['PYTHON_VLC_MODULE_PATH'] = str(folder / 'plugins')
     import vlc
+    # mmdevice controls a Windows audio session shared by players in this
+    # process: muting/turning down one SCREEN also changes its peers. Use the
+    # per-player DirectSound output. Explicit overrides (e.g. the silent
+    # connection probe) still take precedence.
+    if not any(option == '--aout' or option.startswith('--aout=') for option in options):
+        options = ('--aout=directsound', *options)
     # Follow VLC's default buffer. Forcing 450 ms can repeatedly display the
     # connection-time HEVC image on some cameras while counters still advance.
     return vlc.Instance('--no-video-title-show', '--quiet', '--rtsp-tcp', *options)

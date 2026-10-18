@@ -144,10 +144,25 @@ class Player(unittest.TestCase):
             w.set_volume(0, 1)
             self.assertIn('volume', [c.args[0] for c in icons.call_args_list])
             self.assertFalse(camera['muted'])
-            camera['muted'] = True
+            w.config['master_muted'] = True
             icons.reset_mock()
             w.set_volume(0, 50)
             self.assertIn('muted', [c.args[0] for c in icons.call_args_list])
+
+    def test_volume_change_unmutes_only_target_camera_and_keeps_master_mute(self):
+        w = self.window
+        first, second = (w.camera_for_slot(i) for i in (0, 1))
+        self.assertTrue(first['muted'])
+        self.assertTrue(second['muted'])
+        w.set_volume(0, 65)
+        self.assertFalse(first['muted'])
+        self.assertTrue(second['muted'])
+        w.config['master_muted'] = True
+        first['muted'] = True
+        w.set_volume(0, 30)
+        self.assertFalse(first['muted'])
+        self.assertTrue(w.config['master_muted'])
+        self.assertTrue(w.audio_muted(first))
 
     def test_reset_applies_window_settings_and_preserves_native_handles(self):
         w = self.window

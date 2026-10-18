@@ -911,6 +911,7 @@ class PlayerWindow(QWidget):
         camera = self.camera_for_slot(index)
         if camera:
             camera['volume'] = max(0, min(100, int(value)))
+            camera['muted'] = False
             self.tiles[index].apply_audio(camera)
             self.tiles[index].overlay.refresh()
             self.select_slot(index)
@@ -1538,6 +1539,37 @@ def main():
                     probe.deleteLater()
                     probe_ok = bool(result and result[0])
                     assert probe_ok, 'Packaged connection-check subprocess failed'
+                audio_isolation = False
+                if demo and window.tiles[0].player.audio_get_track_count() > 0:
+                    # The preceding layout check ends in 1-split. Restart the
+                    # second SCREEN before checking two independent outputs.
+                    window.set_layout(2)
+                    def verify_audio(volumes, mutes):
+                        deadline = time.monotonic() + 4
+                        actual = None
+                        while time.monotonic() < deadline:
+                            window.update_status()
+                            pause = QEventLoop(window)
+                            QTimer.singleShot(80, pause.quit)
+                            pause.exec()
+                            if any(t.worker.busy for t in window.tiles[:2]):
+                                continue
+                            actual = ([t.player.audio_get_volume() for t in window.tiles[:2]],
+                                      [t.player.audio_get_mute() for t in window.tiles[:2]])
+                            if actual == (volumes, mutes):
+                                return
+                        raise AssertionError(f'Audio interference: expected {(volumes, mutes)}, got {actual}')
+                    window.set_volume(0, 100)
+                    window.set_volume(1, 0)
+                    verify_audio([100, 0], [0, 0])
+                    window.single_view(0)
+                    verify_audio([100, 0], [0, 0])
+                    window.toggle_mute(1)
+                    verify_audio([100, 0], [0, 1])
+                    window.restore_focus()
+                    window.set_volume(1, 35)
+                    verify_audio([100, 35], [0, 0])
+                    audio_isolation = True
                 report.update(ok=True, layouts=[1, 2, 4], topmost=True, stable_video_handles=True,
                               opacity=True, dpapi=True, vlc=True, sample_video_streams=video_streams,
                               taskbar_icon=taskbar, taskbar_system_minimize=True,
@@ -1546,7 +1578,8 @@ def main():
                               feedback_stable_layout=True, engine_path=loaded_path.value,
                               engine_from_selected_directory=bundled,
                               engine_bundled=folder.resolve() == (Path(getattr(sys, '_MEIPASS', '.')) / 'vlc').resolve(),
-                              connection_probe_subprocess=probe_ok)
+                              connection_probe_subprocess=probe_ok,
+                              independent_audio_verified=audio_isolation)
                 code = 0
             except Exception:
                 report['error'] = traceback.format_exc()
