@@ -6,7 +6,7 @@ import weakref
 from ctypes import wintypes
 from shiboken6 import isValid
 
-from PySide6.QtCore import QAbstractNativeEventFilter, QByteArray, QMimeData, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QByteArray, QEvent, QMimeData, QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLineEdit, QMenu, QToolButton, QWidget
 
@@ -52,27 +52,50 @@ def secure_clipboard():
 class SessionLockFilter(QAbstractNativeEventFilter):
     def __init__(self, controller):
         super().__init__()
-        self.controller = controller
-        self.hwnd = int(controller.parent().winId())
+        self.controller = weakref.ref(controller)
+        self.hwnd = 0
+        self.installed = False
+        self.registered = False
         self.wts = ctypes.WinDLL('wtsapi32')
         self.wts.WTSRegisterSessionNotification.argtypes = [wintypes.HWND, wintypes.DWORD]
+        self.wts.WTSRegisterSessionNotification.restype = wintypes.BOOL
         self.wts.WTSUnRegisterSessionNotification.argtypes = [wintypes.HWND]
+        self.wts.WTSUnRegisterSessionNotification.restype = wintypes.BOOL
+
+    def start(self):
+        if self.installed:
+            return
+        controller = self.controller()
+        if controller is None or not isValid(controller):
+            return
+        self.hwnd = int(controller.parent().winId())
         self.registered = bool(self.wts.WTSRegisterSessionNotification(self.hwnd, 0))
         QApplication.instance().installNativeEventFilter(self)
+        self.installed = True
 
     def nativeEventFilter(self, event_type, message):
+        if not self.installed or bytes(event_type) not in (b'windows_generic_MSG', b'windows_dispatcher_MSG'):
+            return False, 0
+        if not int(message):
+            return False, 0
         native = wintypes.MSG.from_address(int(message))
-        if native.hwnd == self.hwnd and native.message == 0x02B1 and native.wParam == 7:
-            self.controller.hide_all()
-            if self.controller.request is not None:
-                self.controller.request.cancel()
+        controller = self.controller()
+        if (native.message == 0x02B1 and native.wParam == 7 and native.hWnd == self.hwnd
+                and controller is not None and isValid(controller)):
+            controller.hide_all()
+            if controller.request is not None:
+                controller.request.cancel()
         return False, 0
 
     def close(self):
-        QApplication.instance().removeNativeEventFilter(self)
+        app = QApplication.instance()
+        if self.installed and app is not None:
+            app.removeNativeEventFilter(self)
+        self.installed = False
         if self.registered:
             self.wts.WTSUnRegisterSessionNotification(self.hwnd)
             self.registered = False
+        self.hwnd = 0
 
 
 class PrivacyController(QObject):
@@ -91,7 +114,18 @@ class PrivacyController(QObject):
         self.grant_timer.timeout.connect(self.hide_all)
         QGuiApplication.instance().applicationStateChanged.connect(self.application_changed)
         self.lock_filter = SessionLockFilter(self)
+        owner.installEventFilter(self)
         owner.finished.connect(self.close)
+        owner.destroyed.connect(self.lock_filter.close)
+
+    def eventFilter(self, watched, event):
+        if watched is self.parent():
+            if event.type() == QEvent.Type.Show:
+                self.lock_filter.start()
+            elif event.type() == QEvent.Type.Hide:
+                self.hide_all()
+                self.lock_filter.close()
+        return super().eventFilter(watched, event)
 
     def application_changed(self, state):
         if state != Qt.ApplicationState.ApplicationActive:
