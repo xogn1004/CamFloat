@@ -17,7 +17,8 @@ RTSP 카메라를 **작고 깔끔한 창으로** 보는 Windows용 무료 플레
 
 1. [Releases](https://github.com/xogn1004/CamFloat/releases/latest)에서 **`CamFloat-1.0.0-win-x64.zip`**을 내려받습니다.
 2. 압축을 **모두 풀고** `CamFloat.exe`를 실행합니다.
-3. **카메라 관리 → 카메라 추가**에서 연결 정보를 입력한 뒤 **저장**합니다.
+3. **카메라 관리 → 카메라 추가**에서 연결 정보를 입력하고 **추가**를 누릅니다.
+4. 관리창에서 **저장**을 누르면 재생을 시작합니다.
 
 Windows 64비트용입니다. **VLC를 별도로 설치할 필요가 없습니다.**
 첫 실행에는 바탕화면·작업 표시줄 바로가기를 선택하거나 건너뛸 수 있습니다.
@@ -35,7 +36,7 @@ Windows 64비트용입니다. **VLC를 별도로 설치할 필요가 없습니�
 | Ctrl+M | 카메라 관리 |
 | F1 | 사용법 / 정보 |
 
-단축키는 CamFloat가 선택된 상태에서 동작합니다. 자세한 조작은 [사용 안내](docs/user-guide.md)를 참고하세요.
+단축키는 CamFloat에서 작업할 때 동작합니다. 자세한 조작은 [사용 안내](docs/user-guide.md)를 참고하세요.
 
 <details>
 <summary>카메라 관리 화면</summary>
@@ -53,6 +54,6 @@ Windows 64비트용입니다. **VLC를 별도로 설치할 필요가 없습니�
 
 ## 개발과 라이선스
 
-- [빌드·검사 안내](docs/development.md) · [기존 검사 기록](CODE_REVIEW.md) · [후속 개발 계획](docs/post-release-plan.md)
+- [개발 안내](docs/development.md) · [1.0.0 검토·검사 요약](CODE_REVIEW.md) · [후속 개발 계획](docs/post-release-plan.md)
 - [보안 안내](SECURITY.md) · [외부 라이브러리 고지와 소스](THIRD_PARTY.md)
 - CamFloat 소스: **[MIT 라이선스](LICENSE)**. 포함된 외부 라이브러리는 각각의 라이선스를 따릅니다.
