@@ -10,13 +10,13 @@ class VolumePopup(QFrame):
         self.overlay = overlay
         self.setObjectName('volumePopup')
         self.setStyleSheet('QFrame#volumePopup{background:rgba(19,24,33,248);'
-            'border:1px solid #405069;border-radius:10px;}'
+            'border:1px solid #405069;border-radius:8px;}'
             'QSlider::groove:vertical{width:3px;background:#3b485c;border-radius:1px;}'
             'QSlider::add-page:vertical{background:#8dbbfa;border-radius:1px;}'
-            'QSlider::handle:vertical{height:10px;background:#d4e6ff;margin:0 -4px;border-radius:5px;}')
-        self.setFixedWidth(36)
+            'QSlider::handle:vertical{height:8px;background:#d4e6ff;margin:0 -3px;border-radius:4px;}')
+        self.setFixedWidth(26)
         box = QVBoxLayout(self)
-        box.setContentsMargins(11, 8, 11, 8)
+        box.setContentsMargins(7, 5, 7, 5)
         self.slider = QSlider(Qt.Orientation.Vertical, self)
         self.slider.setRange(0, 100)
         self.slider.setAccessibleName('이 영상 음량')
@@ -41,7 +41,7 @@ class VolumePopup(QFrame):
         self.slider.blockSignals(False)
         anchor = overlay.mute.mapTo(overlay, QPoint(overlay.mute.width() // 2, 0))
         # Even a 150x90 pane must leave its speaker reachable below the popup.
-        self.setFixedHeight(min(116, max(44, anchor.y() - 8)))
+        self.setFixedHeight(min(58, max(36, anchor.y() - 8)))
         x = max(4, min(anchor.x() - self.width() // 2, overlay.width() - self.width() - 4))
         y = max(4, min(anchor.y() - self.height() - 4, overlay.height() - self.height() - 4))
         self.move(x, y)
