@@ -1,5 +1,7 @@
 # 개발 안내
 
+현재 개발 버전은 **1.0.1-dev.1**, 공개 배포본은 **1.0.0**입니다.
+
 ## 환경과 빌드
 
 Windows x64와 Python 3.14를 사용합니다. PySide6·python-vlc 등 의존성 버전은 `requirements.txt`에 고정되어 있습니다.
@@ -8,10 +10,10 @@ Windows x64와 Python 3.14를 사용합니다. PySide6·python-vlc 등 의존성
 git clone https://github.com/xogn1004/CamFloat.git
 cd CamFloat
 .\build.bat
-.\.venv\Scripts\python.exe package_release.py --archive
+.\.venv\Scripts\python.exe package_release.py --staged --archive
 ```
 
-`build.bat`은 가상 환경·의존성 설치, 공식 LGPL libVLC 패키지 다운로드·체크섬 확인, 아이콘 생성과 PyInstaller 빌드를 수행합니다. 결과는 `release/CamFloat/`에 생성되며 VLC를 별도로 설치할 필요가 없습니다.
+`build.bat`은 가상 환경·의존성 설치, 공식 LGPL libVLC 패키지 다운로드·체크섬 확인, 아이콘 생성과 PyInstaller 빌드를 수행합니다. VLC를 별도로 설치할 필요가 없습니다. 개발·RC 버전은 자동으로 별도 빌드 경로에 보관하며, 정식 버전의 기본 결과는 `release/CamFloat/`입니다.
 
 앱을 실행 중이라면 `build.bat --staged`로 별도 빌드합니다. 결과는 `%LOCALAPPDATA%/CamFloatBuild/current/dist/CamFloat`이며, `package_release.py --staged --archive`로 해당 결과를 압축할 수 있습니다.
 
@@ -41,27 +43,34 @@ cd CamFloat
 
 ### 기능별 검사
 
-다음 명령에서 파일 이름을 골라 사용합니다. 기능을 자동으로 선택하는 통합 실행기는 아직 없습니다.
+기본 명령은 약 2초의 간단 검사입니다. 기본값·암호화 저장·등록 입력·목록 파일·버전 일치·빈 플레이어 시작/종료와 검사 선택 동작을 확인합니다.
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -p test_audio_isolation.py -v
+.\check.bat
+# 사용 가능한 검사 목록:
+.\check.bat --list
 ```
 
-| 변경 영역 | 검사 파일 |
+| 변경 영역 | 명령 |
 | --- | --- |
-| 화면별 소리 | `test_audio_isolation.py` |
-| 간편 등록 | `test_simple_registration.py` |
-| 카메라 관리 | `test_camera_management.py` |
-| 목록 파일 | `test_camera_archive.py` |
-| 첫 실행·바로가기 | `test_startup_shortcuts.py` |
+| 기본 간단 검사 | `check.bat` 또는 `check.bat quick` |
+| 화면별 소리 | `check.bat audio` |
+| 등록·카메라 관리 | `check.bat cameras` |
+| 목록 파일 | `check.bat files` |
+| 분할·전체화면·도구 | `check.bat window` |
+| 첫 실행·바로가기 | `check.bat shortcuts` |
 
-관련 화면·저장·재생 경로의 다른 검사도 변경 범위에 맞춰 선택합니다. 결과에는 실행한 범위·개수·시간과 생략한 범위를 기록합니다.
+여러 영역은 `check.bat files shortcuts`처럼 함께 지정합니다. 중복 영역은 한 번만 실행합니다. 전체 검사는 `full`을 명시할 때만 실행하며 다른 영역과 섞을 수 없습니다.
+
+검사에는 임시 설정 폴더와 합성 카메라·영상을 사용합니다. 실제 사용자 설정이나 카메라에 접속하지 않습니다. 결과와 로그는 `verification/current/checks/<영역>/latest.json`, `latest.log`에 덮어써 기록합니다. 실행 범위·개수·시간·생략 범위를 확인할 수 있습니다. 개별 테스트 모듈은 기존 unittest 명령으로도 실행할 수 있습니다.
 
 ### 릴리즈 전체 검사
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -p "test_*.py" -v
+.\check.bat full
 ```
+
+`full`은 단위·회귀 검사 전체입니다. 네트워크 통합 검사와 최종 배포 EXE 점검은 아래 절차로 별도 실행합니다.
 
 네트워크 통합 검사는 `tests/network_qa.py`입니다. 다음 자료를 로컬에 준비해야 합니다.
 

@@ -31,7 +31,7 @@ from menu_labels import (CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, men
 from volume_popup import VolumePopup
 from hover_tips import HoverTips
 
-VERSION = '1.0.0'
+VERSION = '1.0.1-dev.1'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}

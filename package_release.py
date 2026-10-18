@@ -30,6 +30,9 @@ UNUSED_QT_FILES = (
 
 
 def prepare():
+    metadata = (ROOT / 'version_info.txt').read_text(encoding='utf-8')
+    if re.search(r"ProductVersion', '[^']*-(?:dev|rc)\.", metadata) and RELEASE == ROOT / 'release' / 'CamFloat':
+        raise RuntimeError('Development builds must use --staged; the published release is preserved.')
     if RELEASE.is_symlink() or RELEASE.is_junction():
         raise RuntimeError('Release directory must not be a linked directory.')
     allowed = [ROOT / 'release' / 'CamFloat',

@@ -20,6 +20,8 @@ call ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean ^
 if errorlevel 1 goto :failed
 
 if /i "%~1"=="--staged" goto :staged
+findstr /C:"-dev." /C:"-rc." version_info.txt >nul
+if not errorlevel 1 goto :staged
 robocopy "%CAMFLOAT_STAGE%\dist\CamFloat" "%~dp0release\CamFloat" /E /COPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS
 if errorlevel 8 goto :failed
 call ".venv\Scripts\python.exe" package_release.py
