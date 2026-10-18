@@ -65,7 +65,7 @@ class SessionRules(unittest.TestCase):
             for _ in range(8):
                 self.window.update_status()
             self.assertEqual(tile.worker.revision, revision)
-            self.assertIn('수동', tile.status_text)
+            self.assertIn('다시 연결', tile.status_text)
             self.window.reconnect(0)
             self.assertFalse(tile.initial_failed)
             self.assertGreater(tile.worker.revision, revision)

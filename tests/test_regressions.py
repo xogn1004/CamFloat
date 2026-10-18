@@ -237,8 +237,9 @@ class UIRegressions(unittest.TestCase):
         editor = CameraEditor(new_camera('x', 'rtsp://host/main'), self.window)
         editor.full_url.setText('rtsp://host:badport/main')
         editor.mode.setCurrentIndex(0)
-        self.assertEqual(editor.mode.currentIndex(), 1)
-        self.assertFalse(editor.error.isHidden())
+        self.assertEqual(editor.mode.currentIndex(), 0)
+        editor.mode.setCurrentIndex(1)
+        self.assertEqual(editor.full_url.text(), 'rtsp://host:badport/main')
         editor.validate()
         self.assertNotEqual(editor.result(), QDialog.DialogCode.Accepted)
         editor.full_url.setText('rtsp://host/main')
@@ -247,17 +248,16 @@ class UIRegressions(unittest.TestCase):
         self.assertEqual(editor.camera['sd_url'], 'rtsp://host/sub')
         editor.deleteLater()
 
-    def test_registry_search_selection_and_order_lock(self):
+    def test_registry_shows_all_cameras_and_order_is_always_available(self):
         manager = CameraManager(self.window.config['cameras'], self.window)
-        manager.search.setText('6')
+        self.assertFalse(hasattr(manager, 'search'))
+        self.assertFalse(hasattr(manager, 'filter'))
+        manager.table.selectRow(5)
         self.assertEqual(manager.table.currentRow(), 5)
-        self.assertTrue(manager.table.isRowHidden(0))
-        self.assertFalse(manager.buttons['up'].isEnabled())
-        manager.search.setText('no match')
-        self.assertEqual(manager.table.currentRow(), -1)
-        self.assertFalse(manager.buttons['delete'].isEnabled())
-        manager.search.clear()
-        self.assertEqual(manager.table.currentRow(), 0)
+        self.assertFalse(manager.table.isRowHidden(0))
+        self.assertTrue(manager.buttons['up'].isEnabled())
+        manager.move_camera(-1)
+        self.assertEqual(manager.table.currentRow(), 4)
         manager.deleteLater()
 
     def test_modal_form_accepts_digits_without_layout_shortcut_interception(self):

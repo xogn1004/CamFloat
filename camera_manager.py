@@ -2,11 +2,11 @@
 import copy
 from urllib.parse import unquote, urlsplit
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
+from PySide6.QtCore import QAbstractTableModel, QEvent, QIODevice, QModelIndex, QSaveFile, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDialog,
-    QDialogButtonBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu,
-    QMessageBox, QPushButton, QScrollArea, QSplitter, QTableView, QTabWidget,
+    QDialogButtonBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QMenu,
+    QMessageBox, QPushButton, QScrollArea, QSplitter, QTableView, QTabWidget, QToolButton,
     QVBoxLayout, QWidget)
 
 from camera_model import (camera_display_name, camera_url, default_config,
@@ -15,6 +15,9 @@ from camera_editor import CameraEditor
 from icons import icon
 from privacy import PrivacyController, SensitiveField
 from ui_theme import CAMERA_STYLE
+from feedback import Feedback, confirm_action
+from camera_archive import encode, read_file, import_candidates
+from camera_transfer import ImportPreview
 
 
 class CameraListModel(QAbstractTableModel):
@@ -88,6 +91,12 @@ class CameraManager(QDialog):
         title.setStyleSheet('font-size:18px;font-weight:600;')
         header.addWidget(title)
         header.addStretch()
+        self.file_menu_button = QToolButton()
+        self.file_menu_button.setIcon(icon('more'))
+        self.file_menu_button.setToolTip('목록 불러오기 · 내보내기')
+        self.file_menu_button.setAccessibleName('목록 불러오기 · 내보내기')
+        self.file_menu_button.clicked.connect(self.file_menu)
+        header.addWidget(self.file_menu_button)
         add = self.action_button('add', '카메라 추가', self.add_camera, 'add')
         add.setObjectName('primary')
         header.addWidget(add)
@@ -97,19 +106,20 @@ class CameraManager(QDialog):
         self.build_registry_tab()
         self.build_assignments_tab()
         self.tabs.currentChanged.connect(lambda *_: self.privacy.hide_all())
-        self.notice = QLabel()
-        self.notice.setWordWrap(True)
-        self.notice.setStyleSheet('color:#9fb9db;font-size:11px;')
-        self.notice.hide()
-        root.addWidget(self.notice)
-        self.privacy.notice.connect(self.show_notice)
+        self.feedback = Feedback(self)
+        self.notice = self.feedback
+        self.privacy.feedback.connect(self.feedback.show_message)
+        self.privacy.cleared.connect(self.feedback.clear_message)
         footer = QHBoxLayout()
         self.count_label = QLabel()
         self.count_label.setStyleSheet('color:#96a9c3;')
         footer.addWidget(self.count_label)
         footer.addStretch()
+        self.dirty_label = QLabel()
+        self.dirty_label.setStyleSheet('color:#d6c69f;font-size:11px;')
+        footer.addWidget(self.dirty_label)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
-        buttons.button(QDialogButtonBox.StandardButton.Save).setText('저장하고 적용')
+        buttons.button(QDialogButtonBox.StandardButton.Save).setText('저장')
         buttons.button(QDialogButtonBox.StandardButton.Save).setObjectName('primary')
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('취소')
         buttons.accepted.connect(self.accept)
@@ -132,16 +142,6 @@ class CameraManager(QDialog):
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 10, 0, 0)
-        filters = QHBoxLayout()
-        self.search = QLineEdit()
-        self.search.setPlaceholderText('카메라 번호·별명 검색')
-        self.search.textChanged.connect(self.filter_rows)
-        filters.addWidget(self.search, 1)
-        self.filter = QComboBox()
-        self.filter.addItems(['전체', '사용', '사용 안 함'])
-        self.filter.currentIndexChanged.connect(self.filter_rows)
-        filters.addWidget(self.filter)
-        layout.addLayout(filters)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         left = QWidget()
         left_layout = QVBoxLayout(left)
@@ -162,10 +162,12 @@ class CameraManager(QDialog):
         self.table.doubleClicked.connect(lambda index: self.edit_camera() if index.column() != 4 else None)
         self.table.clicked.connect(lambda index: self.row_menu(index) if index.column() == 4 else None)
         left_layout.addWidget(self.table, 1)
-        self.empty_label = QLabel('등록된 카메라가 없습니다. 상단에서 카메라를 추가하세요.')
+        self.empty_label = QLabel('등록된 카메라가 없습니다.', self.table.viewport())
+        self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.empty_label.setWordWrap(True)
         self.empty_label.setStyleSheet('color:#96a9c3;padding:10px;')
-        left_layout.addWidget(self.empty_label)
+        self.table.viewport().installEventFilter(self)
         order = QHBoxLayout()
         order.addWidget(self.action_button('up', '위로', lambda: self.move_camera(-1), 'up'))
         order.addWidget(self.action_button('down', '아래로', lambda: self.move_camera(1), 'down'))
@@ -186,9 +188,12 @@ class CameraManager(QDialog):
         self.detail_title.setStyleSheet('font-size:15px;font-weight:600;')
         details.addWidget(self.detail_title)
         self.details = {}
+        self.detail_groups = []
         for key, label in [('host', '주소'), ('username', '아이디'), ('password', '비밀번호'),
                             ('url', 'RTSP 주소'), ('sd_url', 'RTSP 주소2 (SD)')]:
-            group = QVBoxLayout()
+            container = QWidget()
+            group = QVBoxLayout(container)
+            group.setContentsMargins(0, 0, 0, 0)
             group.setSpacing(4)
             caption = QLabel(label)
             caption.setObjectName('fieldCaption')
@@ -196,11 +201,8 @@ class CameraManager(QDialog):
             field = SensitiveField(self.privacy, label, required=key not in ('host', 'username'))
             self.details[key] = field
             group.addWidget(field)
-            details.addLayout(group)
-        description = QLabel('비밀번호·RTSP는 본인인증 후 30초간 표시됩니다.')
-        description.setWordWrap(True)
-        description.setStyleSheet('color:#96a9c3;font-size:10px;')
-        details.addWidget(description)
+            self.detail_groups.append(container)
+            details.addWidget(container)
         details.addStretch()
         self.buttons['edit'] = QAction(icon('edit'), '카메라 수정', self)
         self.buttons['edit'].triggered.connect(self.edit_camera)
@@ -219,7 +221,7 @@ class CameraManager(QDialog):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 12, 0, 0)
         row = QHBoxLayout()
-        row.addWidget(QLabel('편집할 화면 구성'))
+        row.addWidget(QLabel('화면 구성'))
         self.layout_choice = QComboBox()
         for count in (1, 2, 4):
             self.layout_choice.addItem(f'{count}분할', count)
@@ -228,11 +230,11 @@ class CameraManager(QDialog):
         row.addWidget(self.layout_choice)
         row.addStretch()
         layout.addLayout(row)
-        hint = QLabel('카메라 번호와 SCREEN 번호는 별개입니다. 분할마다 배정을 저장합니다.\n'
-                      '2분할 좌우·상하는 같은 배정을 사용합니다.')
-        hint.setWordWrap(True)
-        hint.setStyleSheet('color:#96a9c3;padding:4px 0 8px;')
-        layout.addWidget(hint)
+        info = QToolButton()
+        info.setIcon(icon('info'))
+        info.setToolTip('분할마다 표시할 카메라를 저장합니다.\n2분할 좌우·상하는 같은 설정을 사용합니다.\n사용 안 함으로 바꾸면 화면에서 빠지고, 다시 사용하면 빈 화면부터 채웁니다.')
+        info.setAccessibleName('화면별 카메라 도움말')
+        row.addWidget(info)
         self.assignments = QGridLayout()
         self.screen_choices, self.screen_labels, self.screen_cards = [], [], []
         for index in range(4):
@@ -251,15 +253,12 @@ class CameraManager(QDialog):
             clear = QPushButton('화면 비우기')
             clear.clicked.connect(lambda _, i=index: self.clear_screen(i))
             card_layout.addWidget(clear, 0, Qt.AlignmentFlag.AlignRight)
+            card_layout.addStretch()
             self.screen_labels.append(label)
             self.screen_choices.append(choice)
             self.screen_cards.append(card)
         layout.addLayout(self.assignments, 1)
-        note = QLabel('사용 안 함: 모든 분할에서 해제 · 다시 사용: 각 분할의 빈 SCREEN부터 채움')
-        note.setWordWrap(True)
-        note.setStyleSheet('color:#96a9c3;font-size:11px;')
-        layout.addWidget(note)
-        self.tabs.addTab(page, '화면 배정')
+        self.tabs.addTab(page, '화면별 카메라')
 
     def snapshot(self):
         return copy.deepcopy((self.cameras, self.layout_slots, self.verify_connection_info))
@@ -285,7 +284,7 @@ class CameraManager(QDialog):
         for index, choice in enumerate(self.screen_choices):
             choice.blockSignals(True)
             choice.clear()
-            choice.addItem('비어 있음', None)
+            choice.addItem('없음', None)
             for camera in self.cameras:
                 if camera.get('enabled', True):
                     choice.addItem(f"{camera['number']}. {camera_display_name(camera)}", camera['id'])
@@ -305,27 +304,17 @@ class CameraManager(QDialog):
         self.refresh(max(0, self.table.currentRow()))
 
     def filter_rows(self):
-        query = self.search.text().strip().casefold()
-        visible = []
-        state = self.filter.currentIndex()
-        for row, camera in enumerate(self.cameras):
-            matches = query in f"{camera['number']} {camera_display_name(camera)}".casefold()
-            matches = matches and (state == 0 or camera.get('enabled', True) == (state == 1))
-            self.table.setRowHidden(row, not matches)
-            if matches:
-                visible.append(row)
-        if self.table.currentRow() not in visible:
-            self.table.clearSelection()
-            self.table.setCurrentIndex(QModelIndex())
-            if visible:
-                self.table.selectRow(visible[0])
         used = sum(c.get('enabled', True) for c in self.cameras)
         if hasattr(self, 'count_label'):
-            self.count_label.setText(f'등록 {len(self.cameras)}대 · 사용 {used}대 · 표시 {len(visible)}대')
-        self.empty_label.setText('검색 결과가 없습니다.' if self.cameras else
-                                '등록된 카메라가 없습니다. 상단에서 카메라를 추가하세요.')
-        self.empty_label.setVisible(not visible)
+            self.count_label.setText(f'등록 {len(self.cameras)}대 · 사용 {used}대')
+        self.empty_label.setGeometry(self.table.viewport().rect())
+        self.empty_label.setVisible(not self.cameras)
         self.update_buttons()
+
+    def eventFilter(self, watched, event):
+        if hasattr(self, 'table') and watched is self.table.viewport() and event.type() == QEvent.Type.Resize:
+            self.empty_label.setGeometry(self.table.viewport().rect())
+        return super().eventFilter(watched, event)
 
     def update_buttons(self):
         if not hasattr(self, 'details') or 'edit' not in self.buttons:
@@ -333,23 +322,26 @@ class CameraManager(QDialog):
         row = self.table.currentRow()
         camera = self.selected_camera()
         valid = camera is not None
+        for container in self.detail_groups:
+            container.setVisible(valid)
         for key in ('edit', 'enable', 'delete'):
             self.buttons[key].setEnabled(valid)
         locked = bool(camera and camera.get('connection_locked'))
         self.buttons['edit'].setEnabled(valid)
         self.buttons['edit'].setText('연결 정보 다시 입력' if locked else '카메라 수정')
-        filtered = bool(self.search.text().strip()) or self.filter.currentIndex() != 0
-        self.buttons['up'].setEnabled(row > 0 and not filtered)
-        self.buttons['down'].setEnabled(0 <= row < len(self.cameras) - 1 and not filtered)
+        self.buttons['up'].setEnabled(row > 0)
+        self.buttons['down'].setEnabled(0 <= row < len(self.cameras) - 1)
         for key in ('up', 'down'):
-            self.buttons[key].setToolTip('검색·필터 중에는 순서를 바꿀 수 없습니다.' if filtered else '카메라 목록 순서 변경')
+            self.buttons[key].setToolTip('목록 순서 변경')
+        if hasattr(self, '_baseline'):
+            self.dirty_label.setText('저장하지 않음' if self.snapshot() != self._baseline else '')
         self.privacy.hide_all()
         if not camera:
-            self.detail_title.setText('카메라를 선택하세요')
+            self.detail_title.setText('카메라 정보')
             for field in self.details.values():
                 field.set_value('')
             return
-        self.buttons['enable'].setText('사용 안 함' if camera.get('enabled', True) else '다시 사용')
+        self.buttons['enable'].setText('사용 안 함' if camera.get('enabled', True) else '사용')
         self.detail_title.setText(f"CAMERA {camera['number']:02} · {camera_display_name(camera)}")
         try:
             p = urlsplit(camera['url'])
@@ -363,21 +355,18 @@ class CameraManager(QDialog):
             field.set_value(values.get(key, ''))
 
     def show_notice(self, text):
-        self.notice.setText(text)
-        self.notice.show()
+        self.feedback.show_message(text)
 
     def add_camera(self):
         number = max([c.get('number', 0) for c in self.cameras] + [0]) + 1
-        dialog = CameraEditor(parent=self, privacy=self.privacy, others=self.cameras, number=number)
+        self.privacy.hide_all()
+        dialog = CameraEditor(parent=self, others=self.cameras, number=number)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.cameras.append(dialog.camera)
             config = dict(cameras=self.cameras, layout=self.edit_layout, layout_slots=self.layout_slots)
             fill_empty_slots(config, [dialog.camera['id']])
             self.layout_slots = config['layout_slots']
-            self.search.clear()
-            self.filter.setCurrentIndex(0)
             self.refresh(len(self.cameras) - 1)
-            self.show_notice('카메라를 목록에 추가했습니다. 저장하고 적용을 눌러 완료하세요.')
         dialog.deleteLater()
 
     def edit_camera(self):
@@ -390,12 +379,11 @@ class CameraManager(QDialog):
                 return
             row = self.table.currentRow()
             locked = self.cameras[row].get('connection_locked', False)
-            if locked and QMessageBox.question(self, '연결 정보 다시 입력',
-                    '기존 연결 정보를 다시 입력할까요? 원래 암호화 정보는 최종 저장 시 백업에 보존합니다.',
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                    QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            if locked and not confirm_action(self, '카메라 정보 다시 입력',
+                    '저장된 정보를 읽을 수 없습니다. 다시 입력할까요?', '다시 입력'):
                 return
-            dialog = CameraEditor(None if locked else self.cameras[row], self, privacy=self.privacy,
+            self.privacy.hide_all()
+            dialog = CameraEditor(None if locked else self.cameras[row], self,
                                   others=self.cameras, number=self.cameras[row]['number'])
             if dialog.exec() == QDialog.DialogCode.Accepted:
                 if locked:
@@ -403,7 +391,6 @@ class CameraManager(QDialog):
                         dialog.camera[key] = self.cameras[row][key]
                 self.cameras[row] = dialog.camera
                 self.refresh(row)
-                self.show_notice('변경을 반영했습니다. 저장하고 적용을 눌러 완료하세요.')
             dialog.deleteLater()
         self.privacy.authorize(edit)
 
@@ -439,15 +426,19 @@ class CameraManager(QDialog):
         if camera is None:
             return
         row = self.table.currentRow()
-        if QMessageBox.question(self, '카메라 삭제', f'{camera_display_name(camera)}을 목록에서 삭제할까요?',
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        box = QMessageBox(self)
+        box.setWindowTitle('카메라 삭제')
+        box.setTextFormat(Qt.TextFormat.PlainText)
+        box.setText(f'‘{camera_display_name(camera)}’ 카메라를 삭제할까요?')
+        remove = box.addButton('삭제', QMessageBox.ButtonRole.DestructiveRole)
+        cancel = box.addButton('취소', QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(cancel)
+        box.exec()
+        if box.clickedButton() is remove:
             self.cameras.pop(row)
             self.refresh(row)
 
     def move_camera(self, delta):
-        if self.search.text().strip() or self.filter.currentIndex() != 0:
-            return
         row = self.table.currentRow()
         target = row + delta
         if 0 <= row < len(self.cameras) and 0 <= target < len(self.cameras):
@@ -471,10 +462,66 @@ class CameraManager(QDialog):
         menu.exec(self.table.viewport().mapToGlobal(self.table.visualRect(index).bottomLeft()))
         menu.deleteLater()
 
+    def file_menu(self):
+        menu = QMenu(self)
+        menu.addAction('목록 불러오기…', self.import_file)
+        menu.addAction('목록 내보내기…', self.export_file).setEnabled(bool(self.cameras))
+        menu.exec(self.file_menu_button.mapToGlobal(self.file_menu_button.rect().bottomLeft()))
+        menu.deleteLater()
+
+    def export_file(self):
+        if not self.cameras:
+            return
+        self.privacy.hide_all()
+        snapshot = copy.deepcopy(self.cameras)
+        def save():
+            try:
+                blob = encode(snapshot)
+            except ValueError as error:
+                self.show_notice(str(error))
+                return
+            path, _ = QFileDialog.getSaveFileName(self, '목록 내보내기', '내 카메라.camfloat', 'CamFloat 카메라 목록 (*.camfloat)')
+            if not path:
+                return
+            if not path.lower().endswith('.camfloat'):
+                path += '.camfloat'
+            target = QSaveFile(path)
+            target.setDirectWriteFallback(False)
+            if not target.open(QIODevice.OpenModeFlag.WriteOnly):
+                self.show_notice('파일을 저장하지 못했습니다. 다른 위치를 선택하세요.')
+                return
+            if target.write(blob) != len(blob) or not target.commit():
+                target.cancelWriting()
+                self.show_notice('파일을 저장하지 못했습니다. 다시 시도하세요.')
+                return
+            self.show_notice('목록을 내보냈습니다.')
+        self.privacy.authorize(save, required=True, anchor=self.file_menu_button)
+
+    def import_file(self):
+        self.privacy.hide_all()
+        path, _ = QFileDialog.getOpenFileName(self, '목록 불러오기', '', 'CamFloat 카메라 목록 (*.camfloat)')
+        if not path:
+            return
+        try:
+            candidates, duplicates = import_candidates(read_file(path), self.cameras)
+        except (OSError, ValueError) as error:
+            self.show_notice(str(error) if isinstance(error, ValueError) else '파일을 읽을 수 없습니다. 다른 파일을 선택하세요.')
+            return
+        preview = ImportPreview(candidates, duplicates, self)
+        if preview.exec() == QDialog.DialogCode.Accepted:
+            selected = preview.selected_cameras()
+            if selected:
+                self.cameras.extend(selected)
+                config = dict(cameras=self.cameras, layout=self.edit_layout, layout_slots=self.layout_slots)
+                fill_empty_slots(config, [c['id'] for c in selected if c['enabled']])
+                self.layout_slots = config['layout_slots']
+                self.refresh(len(self.cameras) - len(selected))
+        preview.deleteLater()
+
     def accept(self):
         self.privacy.hide_all()
         if self.commit_callback and not self.commit_callback(self.cameras, self.layout_slots, self.verify_connection_info):
-            self.show_notice('설정을 저장하지 못했습니다. 변경 내용은 유지됩니다. 저장 위치와 접근 권한을 확인하세요.')
+            self.show_notice('저장하지 못했습니다. 다시 시도하세요.')
             return
         super().accept()
 
@@ -483,8 +530,8 @@ class CameraManager(QDialog):
             box = QMessageBox(self)
             box.setWindowTitle('저장하지 않은 변경')
             box.setText('변경한 카메라 설정을 저장할까요?')
-            save = box.addButton('저장하고 적용', QMessageBox.ButtonRole.AcceptRole)
-            discard = box.addButton('버리기', QMessageBox.ButtonRole.DestructiveRole)
+            save = box.addButton('저장', QMessageBox.ButtonRole.AcceptRole)
+            discard = box.addButton('저장 안 함', QMessageBox.ButtonRole.DestructiveRole)
             box.addButton('계속 편집', QMessageBox.ButtonRole.RejectRole)
             box.exec()
             if box.clickedButton() is save:

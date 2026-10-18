@@ -377,7 +377,7 @@ def validate_rtsp_url(url):
         if ':' in parts.hostname:
             ipaddress.IPv6Address(parts.hostname)
     except ValueError:
-        raise ValueError('유효한 rtsp:// 주소와 포트(1–65535)를 입력하세요. 비밀번호의 #, @ 등은 % 인코딩하거나 IP 입력 방식을 사용하세요.') from None
+        raise ValueError('RTSP 주소를 확인하세요. 특수문자가 있는 비밀번호는 ‘간편 입력’을 이용하세요.') from None
     return parts
 
 
@@ -398,12 +398,12 @@ def stream_url_for_quality(url, quality):
 def build_url(host, port, username, password, path='/onvif1'):
     host = host.strip().strip('[]')
     if not host or any(ch in host for ch in '/@?#\\') or any(ch.isspace() for ch in host):
-        raise ValueError('IP 또는 도메인만 입력하세요. 전체 주소는 RTSP 주소 입력 방식을 선택하세요.')
+        raise ValueError('IP 또는 도메인을 입력하세요. 전체 주소는 ‘RTSP 주소’에서 입력하세요.')
     if ':' in host:
         try:
             ipaddress.IPv6Address(host)
         except ValueError:
-            raise ValueError('포트는 포트 칸에 따로 입력하세요. IP / 도메인 칸에는 주소만 입력하세요.') from None
+            raise ValueError('포트는 옆의 포트 칸에 입력하세요.') from None
         host = '[' + host + ']'
     if not 1 <= int(port) <= 65535:
         raise ValueError('포트는 1–65535 사이로 입력하세요.')

@@ -10,7 +10,7 @@ def menu_text(name, shortcut=None):
 
 
 def tooltip(name, shortcut=None):
-    return f'{name} · 단축키 {shortcut}' if shortcut else name
+    return f'{name} ({shortcut})' if shortcut else name
 
 
 def fullscreen_name(fullscreen):

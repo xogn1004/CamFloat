@@ -100,6 +100,9 @@ class SessionLockFilter(QAbstractNativeEventFilter):
 
 class PrivacyController(QObject):
     notice = Signal(str)
+    feedback = Signal(str, object)
+    cleared = Signal()
+    busy_changed = Signal(bool)
 
     def __init__(self, owner, require_verification=False):
         super().__init__(owner)
@@ -136,12 +139,19 @@ class PrivacyController(QObject):
             else:
                 self.hide_all()
 
-    def hide_all(self):
+    def hide_all(self, cancel=True):
         self.grant_timer.stop()
         self.grant_until = 0
         self.generation += 1
         for field in self.live_fields():
             field.conceal()
+        self.cleared.emit()
+        if cancel and self.request is not None:
+            request, self.request = self.request, None
+            request.finished.disconnect()
+            request.cancel()
+            request.deleteLater()
+            self.busy_changed.emit(False)
 
     def live_fields(self):
         result = []
@@ -152,43 +162,47 @@ class PrivacyController(QObject):
                 self.fields.discard(field)
         return result
 
-    def authorize(self, callback, force=False, required=False):
+    def authorize(self, callback, force=False, required=False, anchor=None):
         if self.request is not None:
             return
         if not force and (time.monotonic() < self.grant_until or not (self.require_verification or required)):
             callback()
             return
-        self.hide_all()
+        self.hide_all(cancel=False)
         generation = self.generation
         owner = QApplication.activeWindow() or self.parent()
         request = ConsentRequest(self)
         self.request = request
+        self.busy_changed.emit(True)
         def complete(success, message):
             self.request = None
+            self.busy_changed.emit(False)
             request.deleteLater()
             def finish():
-                if success and self.generation == generation and self.parent().isVisible() and app_is_foreground():
+                if self.generation != generation or not self.parent().isVisible():
+                    return
+                if success and app_is_foreground():
                     self.grant_until = time.monotonic() + 30
                     self.grant_timer.start()
                     callback()
                 elif message:
                     self.notice.emit(message)
-                elif success:
-                    self.notice.emit('화면이 변경되었습니다. CamFloat에서 다시 확인하세요.')
+                    self.feedback.emit(message, anchor)
             QTimer.singleShot(150, self, finish)
         request.finished.connect(complete)
         request.start(int(owner.winId()))
 
-    def copy(self, value, message='정보를 복사했습니다. 30초 후 클립보드에서 지웁니다.', *, required=False):
+    def copy(self, value, message='', *, required=False, anchor=None, success=None):
         def perform():
             secure_clipboard().copy(value)
-            self.notice.emit(message)
-        self.authorize(perform, required=required)
+            if success:
+                success()
+            elif message:
+                self.feedback.emit(message, anchor)
+        self.authorize(perform, required=required, anchor=anchor)
 
     def close(self, *_):
         self.hide_all()
-        if self.request is not None:
-            self.request.cancel()
         self.lock_filter.close()
 
 
@@ -258,14 +272,37 @@ class SensitiveField(QWidget):
         self.copy_button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.copy_button.setAccessibleName(f'{label} 복사')
-        self.copy_button.setToolTip(f'{label} 복사' + (' · 본인인증 필요' if required else ''))
+        self.copy_button.setToolTip(f'{label} 복사' + (' · 본인 확인 필요' if required else ''))
         self.copy_button.clicked.connect(self.copy_value)
         self.edit.textChanged.connect(self.update_actions)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(30000)
         self.timer.timeout.connect(self.conceal)
+        self.copied_timer = QTimer(self)
+        self.copied_timer.setSingleShot(True)
+        self.copied_timer.setInterval(1500)
+        self.copied_timer.timeout.connect(lambda: self.copy_button.setIcon(icon('copy')))
+        controller.busy_changed.connect(self.set_busy)
         self.set_value(value)
+
+    def set_busy(self, busy):
+        self.update_actions()
+        if busy:
+            self.eye.setEnabled(False)
+            self.copy_button.setEnabled(False)
+            self.copied_timer.stop()
+            self.eye.setToolTip('본인 확인 중…')
+            self.copy_button.setToolTip('본인 확인 중…')
+        else:
+            self.eye.setIcon(icon('eye_off' if self.revealed else 'eye'))
+            self.copy_button.setIcon(icon('copy'))
+            self.eye.setToolTip(f'{self.label} 보기' + (' · 본인 확인 필요' if self.required else ''))
+            self.copy_button.setToolTip(f'{self.label} 복사' + (' · 본인 확인 필요' if self.required else ''))
+
+    def show_copied(self):
+        self.copy_button.setIcon(icon('check', '#9ddbb8'))
+        self.copied_timer.start()
 
     def position_actions(self):
         if not hasattr(self, 'copy_button'):
@@ -292,8 +329,9 @@ class SensitiveField(QWidget):
     def copy_value(self):
         value = self.value()
         if value:
-            self.controller.copy(value, f'{self.label}를 복사했습니다. 30초 후 클립보드에서 지웁니다.',
-                                 required=self.required)
+            self.controller.copy(value, required=self.required, anchor=self, success=self.show_copied)
+            if self.controller.request is not None:
+                self.copy_button.setIcon(icon('lock'))
 
     def value(self):
         return self.edit.text() if self.editable else self._value
@@ -302,11 +340,13 @@ class SensitiveField(QWidget):
         if self.revealed:
             self.conceal()
         else:
-            self.controller.authorize(self.reveal, required=self.required)
+            self.controller.authorize(self.reveal, required=self.required, anchor=self)
+            if self.controller.request is not None:
+                self.eye.setIcon(icon('lock'))
 
     def copy_selection(self):
         if self.revealed and self.edit.hasSelectedText():
-            self.controller.copy(self.edit.selectedText(), required=self.required)
+            self.controller.copy(self.edit.selectedText(), required=self.required, anchor=self, success=self.show_copied)
 
     def reveal(self):
         self.revealed = True
@@ -330,9 +370,9 @@ class SensitiveField(QWidget):
         if self.editable:
             self.edit.setEchoMode(QLineEdit.EchoMode.Password)
         else:
-            self.edit.setText('••••••••' if self._value else '설정 없음')
+            self.edit.setText('••••••••' if self._value else '없음')
         self.eye.setIcon(icon('eye'))
-        self.eye.setToolTip(f'{self.label} 보기 · ' + ('본인인증 필요 · ' if self.required else '') + '30초 후 숨김')
+        self.eye.setToolTip(f'{self.label} 보기' + (' · 본인 확인 필요' if self.required else ''))
 
     def hideEvent(self, event):
         self.conceal()

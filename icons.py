@@ -92,6 +92,8 @@ def icon(name, color='#e1eaf8'):
     elif name == 'copy':
         painter.drawRoundedRect(QRectF(8, 8, 12, 13), 2, 2)
         line(15, 4, 5, 4); line(5, 4, 5, 16)
+    elif name == 'check':
+        line(5, 12, 10, 17); line(10, 17, 20, 6)
     elif name == 'lock':
         painter.drawRoundedRect(QRectF(5, 10, 14, 11), 2, 2)
         painter.drawArc(QRectF(8, 3, 8, 13), 0, 180 * 16)

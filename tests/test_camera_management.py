@@ -143,11 +143,13 @@ class ManagementEntry(unittest.TestCase):
     def test_editor_secret_fields_and_all_copy_paths_require_verification(self):
         manager = CameraManager([self.camera], verify_connection_info=False)
         editor = CameraEditor(self.camera, manager, privacy=manager.privacy)
-        with patch.object(manager.privacy, 'authorize') as authorize:
+        self.assertIsNot(editor.privacy, manager.privacy)
+        with patch.object(editor.privacy, 'authorize') as authorize:
             for key in ('password', 'full_url', 'sd_url'):
                 editor.fields[key].toggle()
                 self.assertTrue(authorize.call_args.kwargs['required'])
                 self.assertFalse(editor.fields[key].revealed)
+        with patch.object(manager.privacy, 'authorize') as authorize:
             manager.details['password'].toggle()
             self.assertTrue(authorize.call_args.kwargs['required'])
             manager.details['url'].copy_value()
@@ -229,15 +231,16 @@ class ManagementEntry(unittest.TestCase):
         self.assertLess(editor.height(), simple_height)
         editor.advanced.setChecked(True)
         self.assertGreater(editor.height(), simple_height)
-        with patch('privacy.secure_clipboard') as clipboard, patch.object(manager.privacy, 'authorize') as authorize:
+        with patch('privacy.secure_clipboard') as clipboard:
             for field in (manager.details['password'], manager.details['url'], editor.fields['password'], editor.fields['full_url']):
-                field.copy_button.click()
-                self.assertTrue(authorize.call_args.kwargs['required'])
-                clipboard.return_value.copy.assert_not_called()
-                authorize.call_args.args[0]()  # Simulate a successful verification callback.
-                clipboard.return_value.copy.assert_called_with(field.value())
-                clipboard.return_value.copy.reset_mock()
-                self.assertFalse(field.revealed)
+                with patch.object(field.controller, 'authorize') as authorize:
+                    field.copy_button.click()
+                    self.assertTrue(authorize.call_args.kwargs['required'])
+                    clipboard.return_value.copy.assert_not_called()
+                    authorize.call_args.args[0]()  # Simulate a successful verification callback.
+                    clipboard.return_value.copy.assert_called_with(field.value())
+                    clipboard.return_value.copy.reset_mock()
+                    self.assertFalse(field.revealed)
         editor.deleteLater()
         manager.deleteLater()
 

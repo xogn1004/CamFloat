@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QToolButton, QW
 from icons import icon
 from native_window import keep_above_owned_windows, set_topmost
 from menu_labels import CAMERAS, fullscreen_name, topmost_name, master_mute_name, tooltip
+from hover_tips import HoverTips
 
 
 PANEL_STYLE = '''QFrame#panel{background:rgba(19,24,33,242);border:1px solid rgba(174,194,223,42);
@@ -24,6 +25,7 @@ class AppChrome(QWidget):
         super().__init__(host, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
                          | Qt.WindowType.NoDropShadowWindowHint)
         self.host = host
+        self.tips = HoverTips(self)
         self.setWindowTitle('CamFloat · 앱 도구')
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -76,6 +78,7 @@ class AppChrome(QWidget):
             item.setIcon(icon(symbol))
         item.setToolTip(tooltip)
         item.setAccessibleName(tooltip)
+        self.tips.add(item)
         item.clicked.connect(lambda checked=False: callback())
         row.addWidget(item)
         return item
@@ -120,6 +123,7 @@ class AppChrome(QWidget):
             self.panel.update()
 
     def hideEvent(self, event):
+        self.tips.clear()
         # Recompose the layered input surfaces exposed by this owned window.
         exposed = QRect(self.geometry())
         super().hideEvent(event)

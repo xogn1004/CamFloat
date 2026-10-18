@@ -8,6 +8,10 @@ CamFloat uses the following unmodified runtime components. License texts are in 
 | PySide6 / Shiboken6 / Qt | 6.12.0 | https://www.qt.io/qt-for-python · LGPL-3.0 / GPL alternatives described in package metadata |
 | python-vlc | 3.0.21203 | https://github.com/oaubert/python-vlc · LGPL-2.1-or-later |
 | PyInstaller bootloader | 6.22.3 | https://pyinstaller.org/ · GPL with the bootloader distribution exception |
+| cryptography | 46.0.3 | https://cryptography.io/ · Apache-2.0 or BSD-3-Clause; bundled wheel uses OpenSSL |
+| OpenSSL (via cryptography) | 3.5.4 | https://www.openssl.org/ · Apache-2.0 |
+| cffi | 2.1.1 | https://cffi.readthedocs.io/ · MIT |
+| pycparser | 3.11 | https://github.com/eliben/pycparser · BSD-3-Clause |
 
 Qt and Python runtime DLLs are distributed as separate files in `_internal/`; replacement of these libraries is not restricted by CamFloat. Corresponding upstream sources and notices:
 

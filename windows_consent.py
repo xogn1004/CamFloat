@@ -85,7 +85,7 @@ class ConsentRequest(QObject):
             self.timer.start()
             self.timeout.start()
         except (OSError, ValueError, AttributeError):
-            self.complete(False, 'Windows 본인 확인을 사용할 수 없습니다. Windows Hello 설정을 확인하세요.')
+            self.complete(False, '본인 확인을 사용할 수 없습니다. Windows 로그인 설정을 확인하세요.')
 
     def poll(self):
         try:
@@ -95,20 +95,19 @@ class ConsentRequest(QObject):
             if status.value == 0:
                 return
             if status.value != 1:
-                self.complete(False, '본인 확인이 취소되었거나 완료되지 않았습니다.')
+                self.complete(False, '' if status.value == 2 else '본인 확인을 다시 시도하세요.')
                 return
             result = ctypes.c_int()
             checked(method(self.operation, 8, ctypes.c_long, ctypes.POINTER(ctypes.c_int))(
                 self.operation, ctypes.byref(result)))
-            self.complete(result.value == 0, '' if result.value == 0 else
-                          '본인 확인을 완료하지 못했습니다. 연결 정보는 숨김 상태로 유지됩니다.')
+            self.complete(result.value == 0, '' if result.value in (0, 6) else '본인 확인을 다시 시도하세요.')
         except (OSError, ValueError):
-            self.complete(False, '본인 확인을 완료하지 못했습니다.')
+            self.complete(False, '본인 확인을 다시 시도하세요.')
 
     def cancel(self):
         if self.info:
             method(self.info, 9, ctypes.c_long)(self.info)
-        self.complete(False, '본인 확인이 취소되었습니다.')
+        self.complete(False, '')
 
     def complete(self, success, message):
         self.timer.stop()

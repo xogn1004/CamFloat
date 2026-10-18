@@ -19,21 +19,21 @@ def probe_worker(url, directory, result):
         media.add_option(':no-audio')
         player.set_media(media)
         if player.play() == -1:
-            result.put((False, '연결 실패 · 주소와 카메라 상태를 확인하세요.'))
+            result.put((False, '연결할 수 없습니다. 주소와 비밀번호를 확인하세요.'))
             return
         deadline = time.monotonic() + 12
         while time.monotonic() < deadline:
             stats = vlc.MediaStats()
             if media.get_stats(stats) and stats.decoded_video > 0:
-                result.put((True, '영상 수신을 확인했습니다.'))
+                result.put((True, '연결됨'))
                 return
             if player.get_state().value in (6, 7):
-                result.put((False, '연결 실패 · 주소·로그인 정보·카메라 상태를 확인하세요.'))
+                result.put((False, '연결할 수 없습니다. 주소와 비밀번호를 확인하세요.'))
                 return
             time.sleep(.1)
-        result.put((False, '연결 시간 초과 · 카메라 또는 네트워크 상태를 확인하세요.'))
+        result.put((False, '응답이 없습니다. 카메라 전원과 네트워크를 확인하세요.'))
     except Exception:
-        result.put((False, '연결 확인을 완료하지 못했습니다.'))
+        result.put((False, '연결을 확인하지 못했습니다. 다시 시도하세요.'))
     finally:
         # The parent terminates a native stop/release that fails to return.
         if player:
@@ -75,7 +75,7 @@ class ConnectionProbe(QObject):
         except (queue.Empty, EOFError, OSError, ValueError):
             if self.process.is_alive() and time.monotonic() < self.deadline:
                 return
-            success, message = False, '연결 시간 초과 또는 확인 작업이 종료되었습니다.'
+            success, message = False, '연결을 확인하지 못했습니다. 다시 시도하세요.'
         self.cancel(notify=False)
         self.finished.emit(success, message)
 
@@ -92,4 +92,4 @@ class ConnectionProbe(QObject):
             self.queue.cancel_join_thread()
             self.queue = None
         if notify:
-            self.finished.emit(False, '연결 확인을 취소했습니다.')
+            self.finished.emit(False, '')

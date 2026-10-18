@@ -35,8 +35,9 @@ class BatchChanges(unittest.TestCase):
         self.assertEqual(actions[2].text().split('\t')[1], 'Ctrl+M')
         for index in range(4):
             self.assertFalse(actions[index].icon().isNull())
-        for index, action in enumerate(actions[0].menu().actions()):
-            self.assertEqual(action.text(), f'{(1, 2, 4)[index]}분할\t{(1, 2, 4)[index]}')
+        expected = ['1분할\t1', '2분할 · 좌우\t2', '2분할 · 상하\t2', '4분할\t4']
+        for action, label in zip(actions[0].menu().actions(), expected, strict=True):
+            self.assertEqual(action.text(), label)
             self.assertFalse(action.icon().isNull())
         hardware = next(a for a in actions if a.text() == '하드웨어 가속 해제')
         self.assertFalse(hardware.isCheckable())
@@ -45,7 +46,7 @@ class BatchChanges(unittest.TestCase):
         chrome = self.window.chrome
         self.assertTrue(all(button.text() == '' and not button.icon().isNull()
                             for button in chrome.layout_buttons.values()))
-        self.assertIn('단축키 1', chrome.layout_buttons[1].toolTip())
+        self.assertIn('(1)', chrome.layout_buttons[1].toolTip())
         chrome.layout().activate() if chrome.layout() else None
         chrome.panel.layout().activate()
         self.assertLess(chrome.manager.x(), chrome.fullscreen.x())

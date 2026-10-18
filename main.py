@@ -29,8 +29,9 @@ from chrome import AppChrome
 from menu_labels import (CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, menu_text, tooltip,
                          topmost_name, master_mute_name, hardware_name)
 from volume_popup import VolumePopup
+from hover_tips import HoverTips
 
-VERSION = '1.0.0-rc.3'
+VERSION = '1.0.0-rc.4'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -78,7 +79,7 @@ class PlayerTile(QWidget):
         if not camera or camera.get('connection_locked'):
             self.stop()
             if camera and camera.get('connection_locked'):
-                self.status_text = '연결 정보 확인 필요\n저장한 Windows 계정 또는 설정 백업을 확인하세요'
+                self.status_text = '카메라 정보 확인 필요\n카메라 관리에서 정보를 다시 입력하세요'
             return
         url = camera_url(camera)
         key = (camera['id'], url, self.host.config['hardware_acceleration'])
@@ -167,6 +168,7 @@ class InputOverlay(QWidget):
         super().__init__(host, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
                          | Qt.WindowType.NoDropShadowWindowHint)
         self.host, self.index = host, index
+        self.tips = HoverTips(self)
         self.setWindowTitle(f'CamFloat · 화면 {index + 1}')
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating, True)
@@ -228,6 +230,7 @@ class InputOverlay(QWidget):
                               'QToolButton:pressed{background:rgba(102,158,235,110);}')
             item.clicked.connect(lambda: (self.host.select_slot(self.index), callback()))
             item.installEventFilter(self)
+            self.tips.add(item)
             return item
         self.reload = button('refresh', tooltip('이 영상 다시 연결', 'Ctrl+R'), lambda: self.host.reconnect(self.index))
         self.choose = button('camera', '이 화면의 카메라 지정', self.choose_camera)
@@ -238,6 +241,7 @@ class InputOverlay(QWidget):
         self.volume.setToolTip('이 영상 음량')
         self.volume.setAccessibleName('이 영상 음량')
         self.volume.installEventFilter(self)
+        self.tips.add(self.volume)
         self.volume.valueChanged.connect(lambda value: self.host.set_volume(self.index, value))
         self.value = QLabel('100')
         self.value.setFixedWidth(23)
@@ -434,6 +438,7 @@ class InputOverlay(QWidget):
         super().leaveEvent(event)
 
     def hideEvent(self, event):
+        self.tips.clear()
         if hasattr(self, 'volume_popup'):
             self.volume_popup.hide_timer.stop()
             self.volume_popup.hide()
@@ -563,7 +568,17 @@ class PlayerWindow(QWidget):
             self.add_shortcut(str(count), lambda n=count: self.set_layout(n))
         self.add_shortcut('Alt+A', self.chrome.reveal)
         QApplication.instance().installEventFilter(self)
+        QApplication.instance().applicationStateChanged.connect(self.application_state_changed)
         self.refresh_layout()
+
+    def application_state_changed(self, state):
+        if state != Qt.ApplicationState.ApplicationActive:
+            QTimer.singleShot(0, self, self.clear_background_selection)
+
+    def clear_background_selection(self):
+        if (not self.closing and not self.modal_depth and not QApplication.activePopupWidget()
+                and not self.app_is_foreground()):
+            self.select_slot(None)
 
     def add_shortcut(self, key, callback):
         shortcut = QShortcut(QKeySequence(key), self)
@@ -1171,6 +1186,9 @@ class PlayerWindow(QWidget):
 
     def new_menu(self, title='', parent=None):
         QToolTip.hideText()
+        self.chrome.tips.clear()
+        for tile in self.tiles:
+            tile.overlay.tips.clear()
         menu = QMenu(title, parent or self)
         menu.setStyleSheet(MENU_STYLE)
         menu.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint, True)
@@ -1194,7 +1212,7 @@ class PlayerWindow(QWidget):
             group.addAction(action)
             action.triggered.connect(lambda checked=False, cid=item['id']: self.assign_camera(index, cid, keep_focus=True))
         if not enabled:
-            menu.addAction('사용 중인 카메라 없음').setEnabled(False)
+            menu.addAction('지정할 수 있는 카메라가 없습니다').setEnabled(False)
         menu.addSeparator()
         if camera:
             menu.addAction(icon('close'), '이 화면 비우기', lambda: self.assign_camera(index, None, keep_focus=True))
@@ -1241,7 +1259,7 @@ class PlayerWindow(QWidget):
             if self.config['layout'] > 1:
                 menu.addAction(icon('enlarge'), menu_text('이 화면만 크게 보기', '더블클릭'), lambda: self.single_view(index))
         if self.focused_screen is not None:
-            menu.addAction(icon('restore'), menu_text('이전 분할로 복원', 'Esc'), self.restore_focus)
+            menu.addAction(icon('restore'), menu_text('분할 화면으로 돌아가기', 'Esc'), self.restore_focus)
         menu.addAction(icon('restore' if self.isFullScreen() else 'fullscreen'), menu_text(fullscreen_name(self.isFullScreen()), 'F11'),
                        lambda: self.toggle_fullscreen(index))
         menu.addSeparator()
@@ -1458,10 +1476,31 @@ def main():
                 window.activate()
                 app.processEvents()
                 assert not window.isMinimized()
+                from camera_archive import encode, decode
+                sample_camera = new_camera('검사 카메라', 'rtsp://viewer:synthetic@127.0.0.1:8554/onvif1')
+                sample_camera['number'] = 1
+                blob = encode([sample_camera])
+                assert decode(blob)[0]['url'] == sample_camera['url'] and b'synthetic' not in blob
+                with window.modal():
+                    manager = CameraManager([sample_camera], window, layout=1)
+                    manager.show()
+                    app.processEvents()
+                    assert manager.isVisible() and manager.privacy.lock_filter.installed
+                    original_size, original_table = manager.size(), manager.table.geometry()
+                    manager.show_notice('검사 안내')
+                    app.processEvents()
+                    assert manager.size() == original_size and manager.table.geometry() == original_table
+                    manager.grab().save(str(data_path().with_name('packaged-manager.png')))
+                    manager.tabs.setCurrentIndex(1)
+                    assert not manager.notice.isVisible()
+                    manager.done(QDialog.DialogCode.Rejected)
+                    manager.deleteLater()
                 report.update(ok=True, layouts=[1, 2, 4], topmost=True, stable_video_handles=True,
                               opacity=True, dpapi=True, vlc=True, sample_video_streams=video_streams,
                               taskbar_icon=taskbar, taskbar_system_minimize=True,
-                              fullscreen_opacity_lock=True, master_mute_preserves_individual=True)
+                              fullscreen_opacity_lock=True, master_mute_preserves_individual=True,
+                              camera_archive_passwordless=True, camera_manager_entry=True,
+                              feedback_stable_layout=True)
                 code = 0
             except Exception:
                 report['error'] = traceback.format_exc()

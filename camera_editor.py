@@ -4,8 +4,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
-    QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox,
-    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
+    QHBoxLayout, QLabel, QLineEdit, QPushButton, QScrollArea, QSpinBox,
+    QSizePolicy, QStackedWidget, QToolButton, QVBoxLayout, QWidget)
 
 from camera_model import (camera_display_name, camera_url, find_vlc_directory, new_camera,
                           supports_quality, validate_rtsp_url)
@@ -14,6 +14,7 @@ from connection_probe import ConnectionProbe
 from privacy import PrivacyController, SensitiveField
 from icons import icon
 from ui_theme import CAMERA_STYLE
+from feedback import Feedback, confirm_action
 
 
 class InputPages(QStackedWidget):
@@ -48,18 +49,23 @@ class CameraEditor(QDialog):
         self.setStyleSheet(CAMERA_STYLE)
         self.resize(520, 420)
         self.setMinimumSize(460, 360)
-        self.privacy = privacy or PrivacyController(self)
+        # Child forms own their session so notices and pending checks cannot leak to the registry.
+        self.privacy = PrivacyController(self)
         self.draft = ConnectionDraft(self.camera['url'])
         root = QVBoxLayout(self)
         root.setContentsMargins(18, 14, 18, 14)
         root.setSpacing(8)
         title = QLabel(self.windowTitle())
         title.setStyleSheet('font-size:18px;font-weight:600;')
-        root.addWidget(title)
-        explanation = QLabel('비밀번호·RTSP 주소 보기는 본인인증이 필요합니다.')
-        explanation.setWordWrap(True)
-        explanation.setStyleSheet('color:#98adc8;font-size:11px;')
-        root.addWidget(explanation)
+        header = QHBoxLayout()
+        header.addWidget(title)
+        header.addStretch()
+        info = QToolButton()
+        info.setIcon(icon('info'))
+        info.setToolTip('비밀번호·RTSP 주소의 보기·복사에는 본인 확인이 필요합니다.\n비운 이름은 자동으로 정합니다.\n복사한 정보는 30초 후 클립보드에서 지워집니다.')
+        info.setAccessibleName('카메라 입력 도움말')
+        header.addWidget(info)
+        root.addLayout(header)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -69,8 +75,8 @@ class CameraEditor(QDialog):
         body.setSpacing(10)
         self.name = QLineEdit(camera_display_name(self.camera) if camera else '')
         self.name.setMaxLength(80)
-        self.name.setPlaceholderText('예: 거실, 현관 · 비우면 카메라 번호로 지정')
-        body.addWidget(field_group('별명', self.name))
+        self.name.setPlaceholderText('예: 거실, 현관')
+        body.addWidget(field_group('이름', self.name))
         self.mode = QComboBox()
         self.mode.addItems(['간편 입력', 'RTSP 주소'])
         body.addWidget(field_group('입력 방식', self.mode))
@@ -131,29 +137,25 @@ class CameraEditor(QDialog):
         advanced_form = QVBoxLayout(self.advanced_panel)
         advanced_form.setContentsMargins(0, 0, 0, 0)
         advanced_form.setSpacing(10)
-        advanced_form.addWidget(field_group('영상 경로 (HD)', self.fields['path']))
+        self.hd_group = field_group('영상 경로 (HD)', self.fields['path'])
+        advanced_form.addWidget(self.hd_group)
         advanced_form.addWidget(field_group('영상 경로 (SD)', self.fields['sd_url']))
         self.sd_url.setPlaceholderText('/onvif2 또는 RTSP 주소')
-        hint = QLabel('ipTIME: HD /onvif1 · SD /onvif2\nSD는 영상 경로나 별도의 RTSP 주소를 입력할 수 있습니다.')
-        hint.setWordWrap(True)
-        hint.setStyleSheet('color:#96a9c3;font-size:10px;')
-        advanced_form.addWidget(hint)
+        self.fields['path'].setToolTip('ipTIME HD 경로: /onvif1')
+        self.fields['sd_url'].setToolTip('ipTIME SD 경로: /onvif2\n영상 경로나 별도의 RTSP 주소를 입력할 수 있습니다.')
         body.addWidget(self.advanced_panel)
         self.advanced_panel.hide()
         self.advanced.toggled.connect(self.toggle_advanced)
         body.addStretch()
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
-        self.error = QLabel()
-        self.error.setWordWrap(True)
-        self.error.setStyleSheet('color:#f5ba98;')
-        self.error.hide()
-        root.addWidget(self.error)
-        self.privacy.notice.connect(self.show_notice)
+        self.error = Feedback(self)
+        self.privacy.feedback.connect(self.error.show_message)
+        self.privacy.cleared.connect(self.error.clear_message)
         connection_row = QHBoxLayout()
         self.check = QPushButton('연결 확인')
         self.check.clicked.connect(self.check_connection)
-        self.cancel_check = QPushButton('확인 취소')
+        self.cancel_check = QPushButton('연결 확인 취소')
         self.cancel_check.hide()
         self.cancel_check.clicked.connect(lambda: self.probe.cancel())
         connection_row.addWidget(self.check)
@@ -161,7 +163,7 @@ class CameraEditor(QDialog):
         connection_row.addStretch()
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         save = buttons.button(QDialogButtonBox.StandardButton.Save)
-        save.setText('변경 반영' if camera else '목록에 추가')
+        save.setText('수정' if camera else '추가')
         save.setObjectName('primary')
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('취소')
         buttons.accepted.connect(self.validate)
@@ -184,15 +186,34 @@ class CameraEditor(QDialog):
         self.mode.currentIndexChanged.connect(self.switch_mode)
         self._simple_snapshot = self.simple_fields()
         self._preserve_full_draft = False
+        for key in ('host', 'username', 'password', 'path', 'full_url', 'sd_url'):
+            self.fields[key].edit.textEdited.connect(self.input_changed)
+        self.port.valueChanged.connect(self.input_changed)
+        self.quality.currentIndexChanged.connect(self.input_changed)
+        self.fields['path'].setEnabled(self.mode.currentIndex() == 0)
+        self.hd_group.setVisible(self.mode.currentIndex() == 0)
         self.fit_form()
+
+    def input_changed(self, *_):
+        if self.probe.process is not None:
+            self.probe.cancel(notify=False)
+        self.check.setEnabled(True)
+        self.check.setText('연결 확인')
+        self.check.setIcon(icon('camera'))
+        self.cancel_check.hide()
+        self.error.clear_message()
+        if self.privacy.request is not None:
+            self.privacy.hide_all()
 
     def fit_form(self):
         self.pages.updateGeometry()
-        height = (420 if self.mode.currentIndex() == 0 else 370) + (150 if self.advanced.isChecked() else 0)
+        simple = self.mode.currentIndex() == 0
+        height = (400 if simple else 350) + ((125 if simple else 70) if self.advanced.isChecked() else 0)
         screen = self.screen().availableGeometry()
         self.resize(min(self.width(), screen.width()), min(height, screen.height() - 60))
 
     def toggle_advanced(self, on):
+        self.privacy.hide_all()
         self.advanced_panel.setVisible(on)
         self.advanced.setIcon(icon('up' if on else 'down'))
         self.fit_form()
@@ -202,8 +223,7 @@ class CameraEditor(QDialog):
             self.show_error(text)
 
     def show_error(self, message):
-        self.error.setText(message)
-        self.error.show()
+        self.error.show_message(message)
 
     def load_fields(self, fields):
         host, port, username, password, path = fields
@@ -222,7 +242,7 @@ class CameraEditor(QDialog):
 
     def switch_mode(self, index):
         self.privacy.hide_all()
-        self.error.hide()
+        self.input_changed()
         if index == 1:
             # Preserve a partial pasted URL until the simple fields actually change.
             if not self._preserve_full_draft or self.simple_fields() != self._simple_snapshot:
@@ -234,11 +254,12 @@ class CameraEditor(QDialog):
             try:
                 self.load_fields(self.draft.adopt(self.full_url.text().strip()))
             except ValueError:
-                if self.full_url.text().strip():
-                    self.show_error('입력 중인 RTSP 주소는 유지했습니다. 간편 입력에서 연결 정보를 입력하세요.')
+                pass
             self._simple_snapshot = self.simple_fields()
             self._preserve_full_draft = True
         self.pages.setCurrentIndex(index)
+        self.fields['path'].setEnabled(index == 0)
+        self.hd_group.setVisible(index == 0)
         self.fit_form()
 
     def collect(self):
@@ -254,7 +275,7 @@ class CameraEditor(QDialog):
         if result['sd_url']:
             validate_rtsp_url(result['sd_url'])
         if result['quality'] == 'SD' and not supports_quality(result):
-            raise ValueError('SD 화질을 사용하려면 고급 설정에 영상 경로 (SD)를 입력하세요.')
+            raise ValueError('고급 설정에서 SD 주소를 입력하세요.')
         result['name'] = self.name.text().strip() or f"카메라 {result.get('number') or ''}".strip()
         return result
 
@@ -265,9 +286,8 @@ class CameraEditor(QDialog):
             self.show_error(str(exc))
             return
         if duplicate_target(result['url'], self.others, result['id']):
-            if QMessageBox.question(self, '중복 연결 정보', '같은 영상 주소의 카메라가 있습니다. 추가 또는 변경할까요?',
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
+            action = '수정' if self.editing else '추가'
+            if not confirm_action(self, '이미 등록된 주소', f'같은 주소의 카메라가 있습니다. {action}할까요?', action):
                 return
         self.camera = result
         self.accept()
@@ -283,14 +303,18 @@ class CameraEditor(QDialog):
             self.show_error('64비트 VLC를 설치한 뒤 연결을 확인하세요.')
             return
         self.check.setEnabled(False)
+        self.check.setText('확인 중…')
         self.cancel_check.show()
-        self.show_error('연결 확인 중…')
+        self.error.clear_message()
         self.probe.start(camera_url(result), folder)
 
     def probe_finished(self, success, message):
         self.check.setEnabled(True)
         self.cancel_check.hide()
-        self.show_error(message)
+        self.check.setText('연결됨' if success else '연결 확인')
+        self.check.setIcon(icon('check' if success else 'camera'))
+        if not success and message:
+            self.show_error(message)
 
     def done(self, result):
         self.probe.cancel(notify=False)
