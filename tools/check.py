@@ -17,6 +17,7 @@ PROFILES = {
     'files': ('test_camera_archive',),
     'window': ('test_layout_sessions', 'test_view_ui', 'test_chrome_gestures'),
     'shortcuts': ('test_startup_shortcuts',),
+    'ptz': ('test_camera_ptz_trial',),
     'full': (),
 }
 DESCRIPTIONS = {
@@ -26,6 +27,7 @@ DESCRIPTIONS = {
     'files': 'Camera import/export format',
     'window': 'Layouts, selection, fullscreen and toolbar gestures',
     'shortcuts': 'First-run shortcuts with simulated pin consent',
+    'ptz': 'Manual PTZ tool protocol and stop scheduling with fake cameras',
     'full': 'All unit/regression tests; network and packaged EXE QC are separate',
 }
 

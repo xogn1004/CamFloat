@@ -59,6 +59,7 @@ cd CamFloat
 | 목록 파일 | `check.bat files` |
 | 분할·전체화면·도구 | `check.bat window` |
 | 첫 실행·바로가기 | `check.bat shortcuts` |
+| 수동 회전 시험 도구 (가상 기기로 검사) | `check.bat ptz` |
 
 여러 영역은 `check.bat files shortcuts`처럼 함께 지정합니다. 중복 영역은 한 번만 실행합니다. 전체 검사는 `full`을 명시할 때만 실행하며 다른 영역과 섞을 수 없습니다.
 
