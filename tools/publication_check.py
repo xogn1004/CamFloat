@@ -14,6 +14,8 @@ from urllib.parse import unquote, urlsplit
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
+# Reviewed fake inputs in the PTZ tool's mocked tests; never queried on the network.
+PTZ_TEST_HOSTS = {'192.168.1.2', '169.254.1.2', '8.8.8.8', '224.0.0.1', '0.0.0.0', 'example'}
 
 
 def git(*args):
@@ -70,11 +72,14 @@ def history_check():
                                'host', 'h', 'unfinished', '주소', '도메인', '카메라ip', '...'}
                     # Deliberately invalid URL in the parser rejection tests.
                     invalid_test = path in ('tests/test_regressions.py', 'tools/publication_check.py') and raw.startswith('rtsp://u:p#x@host/')
-                    if host not in allowed and not host.startswith(('127.', 'host')) and not invalid_test:
+                    ptz_test = path == 'tests/test_camera_ptz_trial.py' and host in PTZ_TEST_HOSTS
+                    if host not in allowed and not host.startswith(('127.', 'host')) and not invalid_test and not ptz_test:
                         reasons.append('non-example-rtsp-host')
                 for address in re.findall(r'(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])', line):
                     if address.startswith('127.'):
                         continue
+                    if path in ('tests/test_camera_ptz_trial.py', 'tools/publication_check.py') and address in PTZ_TEST_HOSTS:
+                        continue  # Exact reviewed test fixtures, including rejected address classes.
                     if (path, address) in {('tests/test_regressions.py', '192.168.1.24'),
                                            ('dialogs.py', '192.168.0.10'),
                                            ('tools/publication_check.py', '192.168.1.24'),
