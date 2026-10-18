@@ -969,15 +969,8 @@ class PlayerWindow(QWidget):
 
     def manage_cameras(self):
         with self.modal():
-            statuses = {}
-            for index, tile in enumerate(self.tiles[:self.config['layout']]):
-                camera = self.camera_for_slot(index)
-                if camera:
-                    statuses[camera['id']] = ('연결 확인 중' if tile.worker.busy else
-                        '연결 끊김' if tile.initial_failed or tile.retry_at is not None or tile.worker.error else
-                        '재생 중' if tile.ever_played else '미확인')
             dialog = CameraManager(self.config['cameras'], self, layout_slots=self.config['layout_slots'],
-                layout=self.config['layout'], commit_callback=self.commit_camera_draft, statuses=statuses)
+                layout=self.config['layout'], commit_callback=self.commit_camera_draft)
             dialog.exec()
             dialog.deleteLater()
 
@@ -1217,7 +1210,7 @@ class PlayerWindow(QWidget):
         if camera:
             quality = menu.addMenu(icon('quality'), '이 영상 화질')
             quality.setEnabled(supports_quality(camera))
-            quality.setToolTip('사용자 지정 경로는 카메라 수정에서 SD 전체 주소를 추가하세요.')
+            quality.setToolTip('사용자 지정 경로는 카메라 수정에서 영상 경로 (SD)를 추가하세요.')
             quality_group = QActionGroup(quality)
             for label in ('HD', 'SD'):
                 action = quality.addAction(label)

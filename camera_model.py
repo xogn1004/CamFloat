@@ -86,7 +86,7 @@ def new_camera(name='', url=''):
 def default_config():
     return dict(version=4, cameras=[], slots=[None] * 4, layout_slots=None, layout=1, split_orientation='horizontal', always_on_top=True,
                 hardware_acceleration=True, master_muted=False, opacity=100, geometry=None,
-                verify_connection_info=False)
+                verify_connection_info=True)
 
 
 def camera_display_name(camera):

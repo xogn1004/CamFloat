@@ -152,10 +152,10 @@ class PrivacyController(QObject):
                 self.fields.discard(field)
         return result
 
-    def authorize(self, callback, force=False):
+    def authorize(self, callback, force=False, required=False):
         if self.request is not None:
             return
-        if not force and (not self.require_verification or time.monotonic() < self.grant_until):
+        if not force and (time.monotonic() < self.grant_until or not (self.require_verification or required)):
             callback()
             return
         self.hide_all()
@@ -179,11 +179,11 @@ class PrivacyController(QObject):
         request.finished.connect(complete)
         request.start(int(owner.winId()))
 
-    def copy(self, value, message='정보를 복사했습니다. 30초 후 클립보드에서 지웁니다.'):
+    def copy(self, value, message='정보를 복사했습니다. 30초 후 클립보드에서 지웁니다.', *, required=False):
         def perform():
             secure_clipboard().copy(value)
             self.notice.emit(message)
-        self.authorize(perform)
+        self.authorize(perform, required=required)
 
     def close(self, *_):
         self.hide_all()
@@ -202,14 +202,14 @@ class PrivateLineEdit(QLineEdit):
     def keyPressEvent(self, event):
         if event.matches(QKeySequence.StandardKey.Copy) or event.matches(QKeySequence.StandardKey.Cut):
             if self.field.revealed and self.hasSelectedText():
-                self.field.controller.copy(self.selectedText())
+                self.field.copy_selection()
             event.accept()
             return
         super().keyPressEvent(event)
 
     def contextMenuEvent(self, event):
         menu = QMenu(self)
-        copy_action = menu.addAction('복사', lambda: self.field.controller.copy(self.selectedText()))
+        copy_action = menu.addAction('복사', self.field.copy_selection)
         copy_action.setEnabled(self.field.revealed and self.hasSelectedText())
         if not self.isReadOnly():
             menu.addAction('붙여넣기', self.paste)
@@ -220,9 +220,11 @@ class PrivateLineEdit(QLineEdit):
 
 class SensitiveField(QWidget):
     """Read-only values use a fixed placeholder; editable fields use Qt Password."""
-    def __init__(self, controller, label, value='', editable=False, parent=None):
+    def __init__(self, controller, label, value='', editable=False, parent=None,
+                 *, required=False, public=False):
         super().__init__(parent)
         self.controller, self.label, self.editable = controller, label, editable
+        self.required, self.public = required, public
         self._value = value
         self.revealed = False
         controller.fields.add(self)
@@ -239,6 +241,7 @@ class SensitiveField(QWidget):
         self.eye.setToolTip(f'{label} 보기 · 30초 후 숨김')
         self.eye.clicked.connect(self.toggle)
         row.addWidget(self.eye)
+        self.eye.setVisible(not public)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(30000)
@@ -259,7 +262,11 @@ class SensitiveField(QWidget):
         if self.revealed:
             self.conceal()
         else:
-            self.controller.authorize(self.reveal)
+            self.controller.authorize(self.reveal, required=self.required)
+
+    def copy_selection(self):
+        if self.revealed and self.edit.hasSelectedText():
+            self.controller.copy(self.edit.selectedText(), required=self.required)
 
     def reveal(self):
         self.revealed = True
@@ -271,6 +278,13 @@ class SensitiveField(QWidget):
         self.timer.start()
 
     def conceal(self):
+        if self.public:
+            self.revealed = True
+            self.timer.stop()
+            if not self.editable:
+                self.edit.setText(self._value)
+            self.edit.setEchoMode(QLineEdit.EchoMode.Normal)
+            return
         self.revealed = False
         self.timer.stop()
         if self.editable:
@@ -278,7 +292,7 @@ class SensitiveField(QWidget):
         else:
             self.edit.setText('••••••••' if self._value else '설정 없음')
         self.eye.setIcon(icon('eye'))
-        self.eye.setToolTip(f'{self.label} 보기 · 30초 후 숨김')
+        self.eye.setToolTip(f'{self.label} 보기 · ' + ('본인인증 필요 · ' if self.required else '') + '30초 후 숨김')
 
     def hideEvent(self, event):
         self.conceal()

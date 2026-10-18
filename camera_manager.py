@@ -2,11 +2,11 @@
 import copy
 from urllib.parse import unquote, urlsplit
 
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPoint, Qt
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDialog,
     QDialogButtonBox, QFrame, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMenu,
-    QMessageBox, QPushButton, QScrollArea, QSplitter, QTableView, QTabWidget, QToolButton,
+    QMessageBox, QPushButton, QScrollArea, QSplitter, QTableView, QTabWidget,
     QVBoxLayout, QWidget)
 
 from camera_model import (camera_display_name, camera_url, default_config,
@@ -64,10 +64,9 @@ class CameraManager(QDialog):
         self.cameras = copy.deepcopy(cameras)
         self.edit_layout = layout
         self.commit_callback = commit_callback
-        self.statuses = statuses or {}
         host_config = getattr(parent, 'config', {})
-        self.verify_connection_info = (host_config.get('verify_connection_info', False)
-            if verify_connection_info is None else verify_connection_info)
+        # Required disclosure is enforced per sensitive field, including old profiles.
+        self.verify_connection_info = True
         self.split_orientation = host_config.get('split_orientation', 'horizontal')
         config = default_config()
         config.update(cameras=self.cameras, layout=layout, layout_slots=copy.deepcopy(layout_slots),
@@ -79,7 +78,7 @@ class CameraManager(QDialog):
         self.setStyleSheet(STYLE)
         self.resize(960, 640)
         self.setMinimumSize(760, 520)
-        self.privacy = PrivacyController(self, self.verify_connection_info)
+        self.privacy = PrivacyController(self)
         self.buttons = {}
         root = QVBoxLayout(self)
         root.setContentsMargins(22, 18, 22, 16)
@@ -89,11 +88,6 @@ class CameraManager(QDialog):
         title.setStyleSheet('font-size:21px;font-weight:600;')
         header.addWidget(title)
         header.addStretch()
-        protection = QToolButton()
-        protection.setIcon(icon('lock'))
-        protection.setToolTip('정보 보호 설정')
-        protection.clicked.connect(lambda: self.protection_menu(protection))
-        header.addWidget(protection)
         add = self.action_button('add', '카메라 추가', self.add_camera, 'add')
         add.setObjectName('primary')
         header.addWidget(add)
@@ -191,54 +185,25 @@ class CameraManager(QDialog):
         self.detail_title.setWordWrap(True)
         self.detail_title.setStyleSheet('font-size:17px;font-weight:600;')
         details.addWidget(self.detail_title)
-        self.status_label = QLabel()
-        self.status_label.setWordWrap(True)
-        self.status_label.setStyleSheet('color:#9eb6d5;font-size:11px;')
-        details.addWidget(self.status_label)
-        copy_row = QHBoxLayout()
-        self.copy_button = QPushButton('RTSP 주소 복사')
-        self.copy_button.setIcon(icon('copy'))
-        self.copy_button.clicked.connect(self.copy_rtsp)
-        copy_row.addWidget(self.copy_button, 1)
-        self.copy_more = QToolButton()
-        self.copy_more.setIcon(icon('down'))
-        self.copy_more.setFixedSize(30, 32)
-        self.copy_more.setToolTip('HD / SD RTSP 주소·아이디·비밀번호 복사')
-        self.copy_more.clicked.connect(self.copy_menu)
-        copy_row.addWidget(self.copy_more)
-        details.addLayout(copy_row)
-        self.copy_hint = QLabel('전체 주소에는 로그인 정보가 포함됩니다.')
-        self.copy_hint.setStyleSheet('color:#96a9c3;font-size:10px;')
-        details.addWidget(self.copy_hint)
-        description = QLabel('연결 정보 · 항목별 보기 / 30초 후 숨김')
-        description.setStyleSheet('color:#96a9c3;padding-top:10px;font-size:11px;')
-        details.addWidget(description)
         self.details = {}
-        advanced = QWidget(detail)
-        advanced_layout = QVBoxLayout(advanced)
-        advanced_layout.setContentsMargins(0, 0, 0, 0)
-        advanced_layout.setSpacing(8)
         for key, label in [('host', '주소'), ('username', '아이디'), ('password', '비밀번호'),
-                            ('url', '전체 RTSP 주소'), ('sd_url', 'SD RTSP 주소')]:
-            destination = advanced_layout if key in ('url', 'sd_url') else details
+                            ('url', 'RTSP 주소'), ('sd_url', 'RTSP 주소2 (SD)')]:
             caption = QLabel(label)
             caption.setStyleSheet('color:#b7c8de;font-size:11px;')
-            destination.addWidget(caption)
-            field = SensitiveField(self.privacy, label)
+            details.addWidget(caption)
+            field = SensitiveField(self.privacy, label, required=key not in ('host', 'username'),
+                                   public=key in ('host', 'username'))
             self.details[key] = field
-            destination.addWidget(field)
-        self.advanced_details = QPushButton('전체 RTSP / SD 주소 펼치기')
-        self.advanced_details.setCheckable(True)
-        self.advanced_details.toggled.connect(lambda on: (advanced.setVisible(on),
-            self.advanced_details.setText('전체 RTSP / SD 주소 접기' if on else '전체 RTSP / SD 주소 펼치기')))
-        details.addWidget(self.advanced_details)
-        details.addWidget(advanced)
-        advanced.hide()
+            details.addWidget(field)
+        description = QLabel('비밀번호·RTSP 주소는 본인인증 후 30초 동안 확인할 수 있습니다.')
+        description.setWordWrap(True)
+        description.setStyleSheet('color:#96a9c3;font-size:11px;')
+        details.addWidget(description)
         details.addStretch()
-        actions = QHBoxLayout()
-        actions.addWidget(self.action_button('edit', '수정', self.edit_camera, 'edit'))
-        actions.addWidget(self.action_button('enable', '사용 안 함', self.toggle_enabled, 'camera'))
-        details.addLayout(actions)
+        self.buttons['edit'] = QAction(icon('edit'), '카메라 수정', self)
+        self.buttons['edit'].triggered.connect(self.edit_camera)
+        self.buttons['enable'] = QAction(icon('camera'), '사용 안 함', self)
+        self.buttons['enable'].triggered.connect(self.toggle_enabled)
         self.buttons['delete'] = QAction(icon('close'), '카메라 삭제', self)
         self.buttons['delete'].triggered.connect(self.delete_camera)
         detail_scroll.setWidget(detail)
@@ -333,7 +298,6 @@ class CameraManager(QDialog):
 
     def change_layout(self):
         self.privacy.hide_all()
-        self.advanced_details.setChecked(False)
         self.edit_layout = self.layout_choice.currentData()
         self.slots = self.layout_slots[str(self.edit_layout)]
         self.refresh(max(0, self.table.currentRow()))
@@ -371,32 +335,20 @@ class CameraManager(QDialog):
             self.buttons[key].setEnabled(valid)
         locked = bool(camera and camera.get('connection_locked'))
         self.buttons['edit'].setEnabled(valid)
-        self.buttons['edit'].setText('다시 입력' if locked else '수정')
-        self.copy_button.setEnabled(valid and not locked)
-        self.copy_more.setEnabled(valid and not locked)
+        self.buttons['edit'].setText('연결 정보 다시 입력' if locked else '카메라 수정')
         filtered = bool(self.search.text().strip()) or self.filter.currentIndex() != 0
         self.buttons['up'].setEnabled(row > 0 and not filtered)
         self.buttons['down'].setEnabled(0 <= row < len(self.cameras) - 1 and not filtered)
         for key in ('up', 'down'):
             self.buttons[key].setToolTip('검색·필터 중에는 순서를 바꿀 수 없습니다.' if filtered else '카메라 목록 순서 변경')
         self.privacy.hide_all()
-        self.advanced_details.setChecked(False)
         if not camera:
             self.detail_title.setText('카메라를 선택하세요')
-            self.status_label.clear()
             for field in self.details.values():
                 field.set_value('')
             return
         self.buttons['enable'].setText('사용 안 함' if camera.get('enabled', True) else '다시 사용')
         self.detail_title.setText(f"CAMERA {camera['number']:02} · {camera_display_name(camera)}")
-        assigned = []
-        for count in (1, 2, 4):
-            screens = [str(i + 1) for i, cid in enumerate(self.layout_slots[str(count)][:count]) if cid == camera['id']]
-            if screens:
-                assigned.append(f"{count}분할 SCREEN {', '.join(screens)}")
-        status = '연결 정보 복호화 실패 · 원본 보존 중' if locked else (
-            self.statuses.get(camera['id'], '미확인') if camera.get('enabled', True) else '사용 안 함')
-        self.status_label.setText(status + '\n' + (' / '.join(assigned) or '배정된 SCREEN 없음'))
         try:
             p = urlsplit(camera['url'])
             host = ('[' + p.hostname + ']' if p.hostname and ':' in p.hostname else p.hostname or '')
@@ -413,23 +365,18 @@ class CameraManager(QDialog):
         self.notice.show()
 
     def add_camera(self):
-        while True:
-            number = max([c.get('number', 0) for c in self.cameras] + [0]) + 1
-            dialog = CameraEditor(parent=self, privacy=self.privacy, others=self.cameras, number=number)
-            accepted = dialog.exec() == QDialog.DialogCode.Accepted
-            again = accepted and dialog.continue_adding
-            if accepted:
-                self.cameras.append(dialog.camera)
-                config = dict(cameras=self.cameras, layout=self.edit_layout, layout_slots=self.layout_slots)
-                fill_empty_slots(config, [dialog.camera['id']])
-                self.layout_slots = config['layout_slots']
-                self.search.clear()
-                self.filter.setCurrentIndex(0)
-                self.refresh(len(self.cameras) - 1)
-                self.show_notice('카메라를 목록에 추가했습니다. 저장하고 적용을 눌러 완료하세요.')
-            dialog.deleteLater()
-            if not again:
-                break
+        number = max([c.get('number', 0) for c in self.cameras] + [0]) + 1
+        dialog = CameraEditor(parent=self, privacy=self.privacy, others=self.cameras, number=number)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.cameras.append(dialog.camera)
+            config = dict(cameras=self.cameras, layout=self.edit_layout, layout_slots=self.layout_slots)
+            fill_empty_slots(config, [dialog.camera['id']])
+            self.layout_slots = config['layout_slots']
+            self.search.clear()
+            self.filter.setCurrentIndex(0)
+            self.refresh(len(self.cameras) - 1)
+            self.show_notice('카메라를 목록에 추가했습니다. 저장하고 적용을 눌러 완료하세요.')
+        dialog.deleteLater()
 
     def edit_camera(self):
         camera = self.selected_camera()
@@ -449,13 +396,10 @@ class CameraManager(QDialog):
             dialog = CameraEditor(None if locked else self.cameras[row], self, privacy=self.privacy,
                                   others=self.cameras, number=self.cameras[row]['number'])
             if dialog.exec() == QDialog.DialogCode.Accepted:
-                changed_connection = any(dialog.camera.get(k) != self.cameras[row].get(k) for k in ('url', 'sd_url', 'quality'))
                 if locked:
                     for key in ('id', 'number', 'volume', 'muted', 'enabled'):
                         dialog.camera[key] = self.cameras[row][key]
                 self.cameras[row] = dialog.camera
-                if changed_connection:
-                    self.statuses[identifier] = '변경 적용 대기'
                 self.refresh(row)
                 self.show_notice('변경을 반영했습니다. 저장하고 적용을 눌러 완료하세요.')
             dialog.deleteLater()
@@ -508,14 +452,25 @@ class CameraManager(QDialog):
             self.cameras[row], self.cameras[target] = self.cameras[target], self.cameras[row]
             self.refresh(target)
 
-    def row_menu(self, index):
+    def build_row_menu(self):
         if not self.selected_camera():
-            return
+            return None
         menu = QMenu(self)
-        menu.addAction(icon('edit'), '연결 정보 다시 입력' if self.selected_camera().get('connection_locked') else '카메라 수정', self.edit_camera)
-        menu.addAction(icon('copy'), 'RTSP 주소 복사', self.copy_rtsp).setEnabled(not self.selected_camera().get('connection_locked'))
+        menu.addAction(self.buttons['edit'])
+        menu.addAction(self.buttons['enable'])
+        menu.addSeparator()
+        available = not self.selected_camera().get('connection_locked')
+        menu.addAction(icon('copy'), 'RTSP 주소 복사', lambda: self.copy_rtsp('HD')).setEnabled(available)
+        menu.addAction(icon('copy'), 'RTSP 주소2 (SD) 복사', lambda: self.copy_rtsp('SD')).setEnabled(
+            available and supports_quality(self.selected_camera()))
         menu.addSeparator()
         menu.addAction(self.buttons['delete'])
+        return menu
+
+    def row_menu(self, index):
+        menu = self.build_row_menu()
+        if menu is None:
+            return
         menu.exec(self.table.viewport().mapToGlobal(self.table.visualRect(index).bottomLeft()))
         menu.deleteLater()
 
@@ -523,45 +478,13 @@ class CameraManager(QDialog):
         camera = self.selected_camera()
         if not camera or camera.get('connection_locked'):
             return
-        # QPushButton.clicked passes a bool; only explicit HD / SD override quality.
+        # Only explicit HD / SD override the configured quality.
         selected_quality = quality if quality in ('HD', 'SD') else camera['quality']
         if selected_quality == 'SD' and not supports_quality(camera):
             self.show_notice('이 카메라는 SD 주소가 설정되지 않았습니다.')
             return
         value = camera_url(dict(camera, quality=selected_quality))
-        self.privacy.copy(value, 'RTSP 주소를 복사했습니다. 30초 후 클립보드에서 지웁니다.')
-
-    def copy_menu(self):
-        camera = self.selected_camera()
-        if not camera or camera.get('connection_locked'):
-            return
-        menu = QMenu(self)
-        menu.addAction('HD RTSP 주소 복사', lambda: self.copy_rtsp('HD'))
-        sd = menu.addAction('SD RTSP 주소 복사', lambda: self.copy_rtsp('SD'))
-        sd.setEnabled(supports_quality(camera))
-        sd.setToolTip('SD 주소가 설정되지 않았습니다.' if not supports_quality(camera) else 'SD 스트림 전체 주소 복사')
-        menu.addSeparator()
-        for key, label in [('host', '접속 주소 복사'), ('username', '아이디 복사'), ('password', '비밀번호 복사')]:
-            menu.addAction(label, lambda checked=False, k=key: self.privacy.copy(self.details[k].value()))
-        menu.exec(self.copy_more.mapToGlobal(QPoint(0, self.copy_more.height())))
-        menu.deleteLater()
-
-    def protection_menu(self, button):
-        menu = QMenu(self)
-        action = menu.addAction('연결 정보 확인 시 Windows 본인 확인')
-        action.setCheckable(True)
-        action.setChecked(self.verify_connection_info)
-        def change(checked):
-            def apply():
-                self.verify_connection_info = checked
-                self.privacy.require_verification = checked
-                self.privacy.hide_all()
-                self.show_notice('본인 확인 설정을 변경했습니다. 저장하고 적용을 눌러 완료하세요.')
-            # Authenticate both enabling and disabling; cancellation leaves policy intact.
-            self.privacy.authorize(apply, force=True)
-        action.triggered.connect(change)
-        menu.exec(button.mapToGlobal(QPoint(0, button.height())))
-        menu.deleteLater()
+        self.privacy.copy(value, 'RTSP 주소를 복사했습니다. 30초 후 클립보드에서 지웁니다.', required=True)
 
     def accept(self):
         self.privacy.hide_all()

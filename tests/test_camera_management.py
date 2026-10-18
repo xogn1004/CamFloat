@@ -3,10 +3,11 @@ import ctypes
 import sys
 import unittest
 from ctypes import wintypes
+from unittest.mock import patch
 
-from PySide6.QtCore import QEvent, QTimer
+from PySide6.QtCore import QEvent, QObject, QTimer, Signal
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton
 
 import test_app as fixtures
 from camera_model import new_camera
@@ -51,7 +52,7 @@ class ManagementEntry(unittest.TestCase):
         manager = CameraManager([self.camera], layout=1)
         manager.show()
         QTest.qWait(35)
-        field = manager.details['host']
+        field = manager.details['password']
         field.reveal()
         self.assertTrue(field.revealed)
         message = wintypes.MSG()
@@ -74,6 +75,117 @@ class ManagementEntry(unittest.TestCase):
         self.app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
         self.assertFalse(watch.installed)
         self.assertFalse(watch.registered)
+
+    def test_registry_details_and_actions_are_compact(self):
+        manager = CameraManager([self.camera], layout=1, statuses={self.camera['id']: '재생 중'})
+        self.assertEqual(manager.details['host'].edit.text(), '127.0.0.1:8554')
+        self.assertEqual(manager.details['username'].edit.text(), 'viewer')
+        for key in ('host', 'username'):
+            self.assertTrue(manager.details[key].public)
+            self.assertTrue(manager.details[key].eye.isHidden())
+        for key in ('password', 'url', 'sd_url'):
+            self.assertTrue(manager.details[key].required)
+            self.assertFalse(manager.details[key].revealed)
+        self.assertEqual(manager.details['url'].label, 'RTSP 주소')
+        self.assertEqual(manager.details['sd_url'].label, 'RTSP 주소2 (SD)')
+        labels = [item.text() for item in manager.findChildren(QLabel)]
+        self.assertNotIn('재생 중', labels)
+        self.assertFalse(any('배정된 SCREEN' in label for label in labels))
+        buttons = [item.text() for item in manager.findChildren(QPushButton)]
+        for removed in ('수정', '사용 안 함', 'RTSP 주소 복사'):
+            self.assertNotIn(removed, buttons)
+        menu = manager.build_row_menu()
+        actions = [action.text() for action in menu.actions()]
+        self.assertIn('카메라 수정', actions)
+        self.assertIn('사용 안 함', actions)
+        self.assertIn('RTSP 주소 복사', actions)
+        menu.deleteLater()
+        manager.deleteLater()
+
+    def test_empty_and_partial_url_can_return_to_simple_without_loss(self):
+        editor = CameraEditor()
+        editor.mode.setCurrentIndex(1)
+        editor.mode.setCurrentIndex(0)
+        self.assertEqual(editor.pages.currentIndex(), 0)
+        self.assertEqual(editor.mode.currentIndex(), 0)
+        editor.mode.setCurrentIndex(1)
+        editor.full_url.setText('rtsp://unfinished')
+        # Explicitly invalid port makes this an incomplete, unparseable draft.
+        partial = 'rtsp://viewer:typed@localhost:not-a-port/path'
+        editor.full_url.setText(partial)
+        editor.mode.setCurrentIndex(0)
+        self.assertEqual(editor.pages.currentIndex(), 0)
+        editor.mode.setCurrentIndex(1)
+        self.assertEqual(editor.full_url.text(), partial)
+        editor.mode.setCurrentIndex(0)
+        editor.host.setText('127.0.0.1')
+        editor.mode.setCurrentIndex(1)
+        self.assertIn('127.0.0.1', editor.full_url.text())
+        self.assertNotIn('추가하고 계속', [b.text() for b in editor.findChildren(QPushButton)])
+        editor.deleteLater()
+
+    def test_sd_path_uses_hd_authority_and_preserves_encoded_password(self):
+        editor = CameraEditor(self.camera)
+        editor.sd_url.setText('/onvif2?channel=2')
+        result = editor.collect()
+        self.assertEqual(result['sd_url'], 'rtsp://viewer:example%21@127.0.0.1:8554/onvif2?channel=2')
+        editor.mode.setCurrentIndex(1)
+        editor.mode.setCurrentIndex(0)
+        self.assertEqual(editor.collect()['url'], self.camera['url'])
+        editor.sd_url.setText('rtsp://other:other@127.0.0.1:8555/custom')
+        self.assertEqual(editor.collect()['sd_url'], editor.sd_url.text())
+        editor.deleteLater()
+
+    def test_editor_secret_fields_and_all_copy_paths_require_verification(self):
+        manager = CameraManager([self.camera], verify_connection_info=False)
+        editor = CameraEditor(self.camera, manager, privacy=manager.privacy)
+        with patch.object(manager.privacy, 'authorize') as authorize:
+            for key in ('password', 'full_url', 'sd_url'):
+                editor.fields[key].toggle()
+                self.assertTrue(authorize.call_args.kwargs['required'])
+                self.assertFalse(editor.fields[key].revealed)
+            manager.details['password'].toggle()
+            self.assertTrue(authorize.call_args.kwargs['required'])
+            manager.copy_rtsp('HD')
+            self.assertTrue(authorize.call_args.kwargs['required'])
+            field = manager.details['password']
+            field.reveal()  # Simulate a prior successful verification.
+            field.edit.selectAll()
+            field.copy_selection()
+            self.assertTrue(authorize.call_args.kwargs['required'])
+        editor.deleteLater()
+        manager.deleteLater()
+
+    def test_verification_failure_success_and_expiry(self):
+        class FakeConsent(QObject):
+            finished = Signal(bool, str)
+            def start(self, hwnd):
+                pass
+            def cancel(self):
+                self.finished.emit(False, '취소')
+
+        manager = CameraManager([self.camera], verify_connection_info=False)
+        manager.show()
+        QTest.qWait(35)
+        field = manager.details['password']
+        with patch('privacy.ConsentRequest', FakeConsent), patch('privacy.app_is_foreground', return_value=True):
+            field.toggle()
+            self.assertIsNotNone(manager.privacy.request)
+            self.assertFalse(field.revealed)
+            manager.privacy.request.finished.emit(False, '인증 실패')
+            QTest.qWait(180)
+            self.assertFalse(field.revealed)
+            field.toggle()
+            manager.privacy.request.finished.emit(True, '')
+            QTest.qWait(180)
+            self.assertTrue(field.revealed)
+            self.assertEqual(field.edit.text(), 'example!')
+            manager.privacy.grant_timer.timeout.emit()
+            self.assertFalse(field.revealed)
+            self.assertEqual(field.edit.text(), '••••••••')
+            self.assertEqual(manager.details['host'].edit.text(), '127.0.0.1:8554')
+        manager.done(QDialog.DialogCode.Rejected)
+        manager.deleteLater()
 
 
 class PlayerManagementEntry(unittest.TestCase):

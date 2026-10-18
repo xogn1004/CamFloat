@@ -1,5 +1,6 @@
 """Camera connection draft form with independent sensitive field disclosure."""
 import copy
+from urllib.parse import urlsplit, urlunsplit
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout,
@@ -21,7 +22,6 @@ class CameraEditor(QDialog):
         self.editing = camera is not None
         self.others = others
         self.camera['number'] = self.camera.get('number') or number
-        self.continue_adding = False
         self.setWindowTitle('카메라 수정' if camera else '카메라 추가')
         self.setStyleSheet(STYLE)
         self.resize(640, 660)
@@ -33,7 +33,9 @@ class CameraEditor(QDialog):
         title = QLabel(self.windowTitle())
         title.setStyleSheet('font-size:20px;font-weight:600;')
         root.addWidget(title)
-        root.addWidget(QLabel('연결 정보는 저장 후에도 항목별로 다시 확인할 수 있습니다.'))
+        explanation = QLabel('비밀번호·RTSP 주소 보기는 본인인증이 필요합니다.')
+        explanation.setWordWrap(True)
+        root.addWidget(explanation)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         content = QWidget()
@@ -56,8 +58,10 @@ class CameraEditor(QDialog):
         full_form.setContentsMargins(0, 8, 0, 4)
         self.fields = {}
         for key, label in [('host', 'IP / 도메인'), ('username', '아이디'), ('password', '비밀번호'),
-                           ('path', '영상 경로'), ('full_url', '전체 RTSP 주소'), ('sd_url', 'SD 전체 주소')]:
-            field = SensitiveField(self.privacy, label, editable=True)
+                           ('path', '영상 경로 (HD)'), ('full_url', 'RTSP 주소'), ('sd_url', '영상 경로 (SD)')]:
+            field = SensitiveField(self.privacy, label, editable=True,
+                                   required=key in ('password', 'full_url', 'sd_url'),
+                                   public=key in ('host', 'username', 'path'))
             self.fields[key] = field
             setattr(self, key, field.edit)
         self.host.setPlaceholderText('IP 또는 도메인')
@@ -70,7 +74,7 @@ class CameraEditor(QDialog):
         simple_form.addRow('포트', self.port)
         simple_form.addRow('아이디', self.fields['username'])
         simple_form.addRow('비밀번호', self.fields['password'])
-        full_form.addRow('전체 RTSP 주소', self.fields['full_url'])
+        full_form.addRow('RTSP 주소', self.fields['full_url'])
         self.full_url.setPlaceholderText('RTSP 주소를 붙여넣으세요')
         self.pages.addWidget(simple)
         self.pages.addWidget(full)
@@ -87,9 +91,10 @@ class CameraEditor(QDialog):
         advanced = QWidget()
         advanced_form = QFormLayout(advanced)
         advanced_form.setContentsMargins(0, 4, 0, 4)
-        advanced_form.addRow('영상 경로', self.fields['path'])
-        advanced_form.addRow('SD 전체 주소', self.fields['sd_url'])
-        hint = QLabel('ipTIME: HD /onvif1 · SD /onvif2\n다른 기종은 제공된 SD 주소를 입력하세요.')
+        advanced_form.addRow('영상 경로 (HD)', self.fields['path'])
+        advanced_form.addRow('영상 경로 (SD)', self.fields['sd_url'])
+        self.sd_url.setPlaceholderText('/onvif2 또는 RTSP 주소')
+        hint = QLabel('ipTIME: HD /onvif1 · SD /onvif2\nSD는 영상 경로나 별도의 RTSP 주소를 입력할 수 있습니다.')
         hint.setWordWrap(True)
         hint.setStyleSheet('color:#96a9c3;')
         advanced_form.addRow(hint)
@@ -121,9 +126,6 @@ class CameraEditor(QDialog):
         save.setText('변경 반영' if camera else '목록에 추가')
         save.setObjectName('primary')
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('취소')
-        if not camera:
-            again = buttons.addButton('추가하고 계속', QDialogButtonBox.ButtonRole.ActionRole)
-            again.clicked.connect(lambda: self.validate(continue_adding=True))
         buttons.accepted.connect(self.validate)
         buttons.rejected.connect(self.reject)
         root.addWidget(buttons)
@@ -141,9 +143,8 @@ class CameraEditor(QDialog):
         self.mode.setCurrentIndex(1 if camera and not known_path else 0)
         self.pages.setCurrentIndex(self.mode.currentIndex())
         self.mode.currentIndexChanged.connect(self.switch_mode)
-        if not camera:
-            self.fields['host'].reveal()
-            self.fields['username'].reveal()
+        self._simple_snapshot = self.simple_fields()
+        self._preserve_full_draft = False
 
     def show_notice(self, text):
         if self.isVisible():
@@ -161,40 +162,51 @@ class CameraEditor(QDialog):
         self.password.setText(password)
         self.path.setText(path)
 
+    def simple_fields(self):
+        return (self.host.text().strip(), self.port.value(), self.username.text(),
+                self.password.text(), self.path.text())
+
     def simple_url(self):
-        return self.draft.from_fields((self.host.text().strip(), self.port.value(), self.username.text(),
-                                       self.password.text(), self.path.text()))
+        return self.draft.from_fields(self.simple_fields())
 
     def switch_mode(self, index):
         self.privacy.hide_all()
         self.error.hide()
-        try:
-            if index == 1:
-                self.full_url.setText(self.simple_url())
-            else:
+        if index == 1:
+            # Preserve a partial pasted URL until the simple fields actually change.
+            if not self._preserve_full_draft or self.simple_fields() != self._simple_snapshot:
+                try:
+                    self.full_url.setText(self.simple_url())
+                except ValueError:
+                    pass
+        else:
+            try:
                 self.load_fields(self.draft.adopt(self.full_url.text().strip()))
-        except ValueError as exc:
-            if index == 0:
-                self.mode.blockSignals(True)
-                self.mode.setCurrentIndex(1)
-                self.mode.blockSignals(False)
-                self.show_error(str(exc))
-                return
+            except ValueError:
+                if self.full_url.text().strip():
+                    self.show_error('입력 중인 RTSP 주소는 유지했습니다. 간편 입력에서 연결 정보를 입력하세요.')
+            self._simple_snapshot = self.simple_fields()
+            self._preserve_full_draft = True
         self.pages.setCurrentIndex(index)
 
     def collect(self):
         url = self.simple_url() if self.mode.currentIndex() == 0 else self.full_url.text().strip()
         validate_rtsp_url(url)
         result = copy.deepcopy(self.camera)
-        result.update(url=url, sd_url=self.sd_url.text().strip(), quality=self.quality.currentText())
+        sd_url = self.sd_url.text().strip()
+        if sd_url.startswith('/'):
+            base = urlsplit(url)
+            path, separator, query = sd_url.partition('?')
+            sd_url = urlunsplit((base.scheme, base.netloc, path, query if separator else '', ''))
+        result.update(url=url, sd_url=sd_url, quality=self.quality.currentText())
         if result['sd_url']:
             validate_rtsp_url(result['sd_url'])
         if result['quality'] == 'SD' and not supports_quality(result):
-            raise ValueError('SD 화질을 사용하려면 고급 설정에 SD 전체 주소를 입력하세요.')
+            raise ValueError('SD 화질을 사용하려면 고급 설정에 영상 경로 (SD)를 입력하세요.')
         result['name'] = self.name.text().strip() or f"카메라 {result.get('number') or ''}".strip()
         return result
 
-    def validate(self, *_args, continue_adding=False):
+    def validate(self, *_args):
         try:
             result = self.collect()
         except ValueError as exc:
@@ -206,7 +218,6 @@ class CameraEditor(QDialog):
                 QMessageBox.StandardButton.No) != QMessageBox.StandardButton.Yes:
                 return
         self.camera = result
-        self.continue_adding = continue_adding
         self.accept()
 
     def check_connection(self):
