@@ -17,6 +17,17 @@ DEVELOPMENT_FILES = (
     'QA-summary.json', 'BUILD-INFO.json',
 )
 
+# These Qt modules are collected transitively by generic PyInstaller hooks.
+# CamFloat uses raster QWidget controls and native libVLC video, not QML, PDF,
+# or Qt's GPL-only virtual keyboard. Keep those modules out of MIT releases.
+UNUSED_QT_FILES = (
+    'plugins/platforminputcontexts/qtvirtualkeyboardplugin.dll',
+    'plugins/imageformats/qpdf.dll',
+    'Qt6VirtualKeyboard.dll', 'Qt6Pdf.dll', 'Qt6Quick.dll',
+    'Qt6Qml.dll', 'Qt6QmlMeta.dll', 'Qt6QmlModels.dll',
+    'Qt6QmlWorkerScript.dll', 'Qt6OpenGL.dll', 'opengl32sw.dll',
+)
+
 
 def prepare():
     if RELEASE.is_symlink() or RELEASE.is_junction():
@@ -27,6 +38,15 @@ def prepare():
         raise RuntimeError('Release directory escaped the workspace.')
     if not (RELEASE / 'CamFloat.exe').is_file() or not (RELEASE / '_internal').is_dir():
         raise RuntimeError('Build release/CamFloat before packaging.')
+
+    qt_directory = RELEASE / '_internal' / 'PySide6'
+    for name in UNUSED_QT_FILES:
+        path = qt_directory / name
+        if not path.resolve().is_relative_to(RELEASE.resolve()):
+            raise RuntimeError('Qt library escaped the release directory.')
+        if path.is_symlink() or path.is_junction():
+            raise RuntimeError(f'Refusing linked Qt library: {name}')
+        path.unlink(missing_ok=True)
 
     # Keep old provenance with the development evidence, rather than shipping it.
     for name in DEVELOPMENT_FILES:
@@ -49,6 +69,7 @@ def prepare():
     # Google Drive source folders can carry the Windows read-only directory
     # flag. Do not make the next isolated PyInstaller build undeletable.
     license_dir.chmod(license_dir.stat().st_mode | stat.S_IWRITE)
+    shutil.copy2(ROOT / 'LICENSE', license_dir / 'CamFloat-MIT.txt')
     shutil.copy2(ROOT / 'packaging' / '시작하기.txt', RELEASE / '시작하기.txt')
     print('Distribution: CamFloat.exe, _internal/, licenses/, 시작하기.txt')
 

@@ -11,3 +11,6 @@ CamFloat - RTSP Stream Viewer
 
 CamFloat.exe만 따로 옮기지 마세요.
 _internal과 licenses를 포함한 CamFloat 폴더 전체가 배포본입니다.
+
+다운로드·소스·문제 신고: https://github.com/xogn1004/CamFloat
+CamFloat는 MIT 라이선스로 무료 배포합니다. 외부 라이브러리 고지는 licenses에 있습니다.

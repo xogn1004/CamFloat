@@ -1,0 +1,56 @@
+[
+  {
+    "component": "Qt Base",
+    "version": "6.12.0",
+    "url": "https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/qtbase-everywhere-src-6.12.0.tar.xz",
+    "file": "qtbase-everywhere-src-6.12.0.tar.xz",
+    "bytes": 51220268,
+    "sha256": "a951bd163c7b80fc6b8c88d7668fb56abf91c152373e13c10666763238131307",
+    "upstream_checksum_verified": true
+  },
+  {
+    "component": "Qt Image Formats",
+    "version": "6.12.0",
+    "url": "https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/qtimageformats-everywhere-src-6.12.0.tar.xz",
+    "file": "qtimageformats-everywhere-src-6.12.0.tar.xz",
+    "bytes": 1848620,
+    "sha256": "0943132b5db8de6b6a7f1d162682173e8763c7ed94e80fd39113292845f67762",
+    "upstream_checksum_verified": true
+  },
+  {
+    "component": "Qt SVG",
+    "version": "6.12.0",
+    "url": "https://download.qt.io/official_releases/qt/6.12/6.12.0/submodules/qtsvg-everywhere-src-6.12.0.tar.xz",
+    "file": "qtsvg-everywhere-src-6.12.0.tar.xz",
+    "bytes": 2341876,
+    "sha256": "e4ab39534ec97987b1b9b60ef7f4d3253d5912a69f8c713a01753174a4029331",
+    "upstream_checksum_verified": true
+  },
+  {
+    "component": "PySide6 and Shiboken6",
+    "version": "6.12.0",
+    "url": "https://download.qt.io/official_releases/QtForPython/pyside6/PySide6-6.12.0-src/pyside-setup-everywhere-src-6.12.0.tar.xz",
+    "file": "pyside-setup-everywhere-src-6.12.0.tar.xz",
+    "bytes": 18211772,
+    "sha256": "099c1a597cf33c1b000e11cf68a0b82d216fb802bf81726efc720394f10c7751",
+    "upstream_checksum_verified": true
+  },
+  {
+    "component": "libVLC",
+    "version": "3.0.23",
+    "url": "https://download.videolan.org/pub/videolan/vlc/3.0.23/vlc-3.0.23.tar.xz",
+    "file": "vlc-3.0.23.tar.xz",
+    "bytes": 26486988,
+    "sha256": "e891cae6aa3ccda69bf94173d5105cbc55c7a7d9b1d21b9b21666e69eff3e7e0",
+    "upstream_checksum_verified": true
+  },
+  {
+    "component": "python-vlc",
+    "version": "3.0.21203",
+    "url": "https://files.pythonhosted.org/packages/4b/5b/f9ce6f0c9877b6fe5eafbade55e0dcb6b2b30f1c2c95837aef40e390d63b/python_vlc-3.0.21203.tar.gz",
+    "sha256": "52d0544b276b11e58b6c0b748c3e0518f94f74b1b4cd328c83a59eacabead1ec",
+    "file": "python_vlc-3.0.21203.tar.gz",
+    "bytes": 162211,
+    "upstream_checksum_verified": true
+  }
+]

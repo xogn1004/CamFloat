@@ -3,6 +3,18 @@ CamFloat - Third-party notices
 CamFloat includes the following unmodified runtime components.
 License texts are provided in this folder and the bundled runtime metadata.
 
+CamFloat's own source is MIT licensed: CamFloat-MIT.txt.
+External components retain their original licenses.
+
+Matching source archives and SHA-256 checksums are available with the release:
+  https://github.com/xogn1004/CamFloat/releases/tag/v1.0.0
+Source manifest and build instructions:
+  https://github.com/xogn1004/CamFloat/blob/v1.0.0/docs/third-party-sources.json
+  https://github.com/xogn1004/CamFloat/blob/v1.0.0/docs/development.md
+Additional upstream license and copyright texts: UPSTREAM-COPYRIGHTS.txt
+
+Qt PDF, QML/Quick, Virtual Keyboard and software OpenGL fallback are excluded.
+
 CPython
   https://www.python.org/
   Python license, including bundled third-party notices: Python-LICENSE.txt

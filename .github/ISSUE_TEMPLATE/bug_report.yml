@@ -1,0 +1,30 @@
+name: 문제 신고
+description: 실행이나 재생 중 발생한 문제를 알려주세요.
+body:
+  - type: markdown
+    attributes:
+      value: "카메라 주소·아이디·비밀번호·설정 파일은 올리지 마세요. 화면을 첨부할 때도 연결 정보를 가려주세요."
+  - type: input
+    id: version
+    attributes:
+      label: CamFloat 버전
+      placeholder: 예) 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows 버전
+      placeholder: 예) Windows 11, 64비트
+  - type: textarea
+    id: problem
+    attributes:
+      label: 어떤 문제가 있나요?
+      description: 문제가 생기는 순서와 예상한 동작을 알려주세요.
+    validations:
+      required: true
+  - type: textarea
+    id: camera
+    attributes:
+      label: 카메라 정보 (선택)
+      description: 모델명과 HD/SD 여부만 적어주세요. 접속 주소는 적지 마세요.
