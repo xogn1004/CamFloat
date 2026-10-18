@@ -2,17 +2,39 @@
 import copy
 from urllib.parse import urlsplit, urlunsplit
 
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox, QFormLayout,
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
     QHBoxLayout, QLabel, QLineEdit, QMessageBox, QPushButton, QScrollArea, QSpinBox,
-    QStackedWidget, QVBoxLayout, QWidget)
+    QSizePolicy, QStackedWidget, QVBoxLayout, QWidget)
 
 from camera_model import (camera_display_name, camera_url, find_vlc_directory, new_camera,
                           supports_quality, validate_rtsp_url)
 from camera_draft import ConnectionDraft, duplicate_target
 from connection_probe import ConnectionProbe
 from privacy import PrivacyController, SensitiveField
-from ui_theme import STYLE
+from icons import icon
+from ui_theme import CAMERA_STYLE
+
+
+class InputPages(QStackedWidget):
+    """An address-only page must not reserve the height of the larger simple form."""
+    def sizeHint(self):
+        return self.currentWidget().sizeHint() if self.currentWidget() else super().sizeHint()
+
+    def minimumSizeHint(self):
+        return self.sizeHint()
+
+
+def field_group(label, control):
+    group = QWidget()
+    layout = QVBoxLayout(group)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(4)
+    caption = QLabel(label)
+    caption.setObjectName('fieldCaption')
+    layout.addWidget(caption)
+    layout.addWidget(control)
+    return group
 
 
 class CameraEditor(QDialog):
@@ -23,45 +45,48 @@ class CameraEditor(QDialog):
         self.others = others
         self.camera['number'] = self.camera.get('number') or number
         self.setWindowTitle('카메라 수정' if camera else '카메라 추가')
-        self.setStyleSheet(STYLE)
-        self.resize(640, 660)
-        self.setMinimumSize(490, 420)
+        self.setStyleSheet(CAMERA_STYLE)
+        self.resize(520, 420)
+        self.setMinimumSize(460, 360)
         self.privacy = privacy or PrivacyController(self)
         self.draft = ConnectionDraft(self.camera['url'])
         root = QVBoxLayout(self)
-        root.setContentsMargins(22, 18, 22, 16)
+        root.setContentsMargins(18, 14, 18, 14)
+        root.setSpacing(8)
         title = QLabel(self.windowTitle())
-        title.setStyleSheet('font-size:20px;font-weight:600;')
+        title.setStyleSheet('font-size:18px;font-weight:600;')
         root.addWidget(title)
         explanation = QLabel('비밀번호·RTSP 주소 보기는 본인인증이 필요합니다.')
         explanation.setWordWrap(True)
+        explanation.setStyleSheet('color:#98adc8;font-size:11px;')
         root.addWidget(explanation)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
         body = QVBoxLayout(content)
-        body.setContentsMargins(0, 12, 0, 8)
-        form = QFormLayout()
-        form.setVerticalSpacing(10)
+        body.setContentsMargins(0, 6, 0, 0)
+        body.setSpacing(10)
         self.name = QLineEdit(camera_display_name(self.camera) if camera else '')
         self.name.setMaxLength(80)
         self.name.setPlaceholderText('예: 거실, 현관 · 비우면 카메라 번호로 지정')
-        form.addRow('별명', self.name)
+        body.addWidget(field_group('별명', self.name))
         self.mode = QComboBox()
         self.mode.addItems(['간편 입력', 'RTSP 주소'])
-        form.addRow('입력 방식', self.mode)
-        body.addLayout(form)
-        self.pages = QStackedWidget()
+        body.addWidget(field_group('입력 방식', self.mode))
+        self.pages = InputPages()
+        self.pages.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         simple, full = QWidget(), QWidget()
-        simple_form, full_form = QFormLayout(simple), QFormLayout(full)
-        simple_form.setContentsMargins(0, 8, 0, 4)
-        full_form.setContentsMargins(0, 8, 0, 4)
+        simple_form, full_form = QVBoxLayout(simple), QVBoxLayout(full)
+        for form in (simple_form, full_form):
+            form.setContentsMargins(0, 0, 0, 0)
+            form.setSpacing(10)
         self.fields = {}
         for key, label in [('host', 'IP / 도메인'), ('username', '아이디'), ('password', '비밀번호'),
                            ('path', '영상 경로 (HD)'), ('full_url', 'RTSP 주소'), ('sd_url', '영상 경로 (SD)')]:
             field = SensitiveField(self.privacy, label, editable=True,
                                    required=key in ('password', 'full_url', 'sd_url'),
-                                   public=key in ('host', 'username', 'path'))
+                                   public=key == 'path' or (not self.editing and key in ('host', 'username')))
             self.fields[key] = field
             setattr(self, key, field.edit)
         self.host.setPlaceholderText('IP 또는 도메인')
@@ -70,11 +95,19 @@ class CameraEditor(QDialog):
         self.port.setRange(1, 65535)
         self.port.setValue(554)
         self.path.setText('/onvif1')
-        simple_form.addRow('IP / 도메인', self.fields['host'])
-        simple_form.addRow('포트', self.port)
-        simple_form.addRow('아이디', self.fields['username'])
-        simple_form.addRow('비밀번호', self.fields['password'])
-        full_form.addRow('RTSP 주소', self.fields['full_url'])
+        address_row = QHBoxLayout()
+        address_row.setSpacing(10)
+        address_row.addWidget(field_group('IP / 도메인', self.fields['host']), 1)
+        port_group = field_group('포트', self.port)
+        port_group.setFixedWidth(94)
+        address_row.addWidget(port_group)
+        simple_form.addLayout(address_row)
+        account_row = QHBoxLayout()
+        account_row.setSpacing(10)
+        account_row.addWidget(field_group('아이디', self.fields['username']), 1)
+        account_row.addWidget(field_group('비밀번호', self.fields['password']), 1)
+        simple_form.addLayout(account_row)
+        full_form.addWidget(field_group('RTSP 주소', self.fields['full_url']))
         self.full_url.setPlaceholderText('RTSP 주소를 붙여넣으세요')
         self.pages.addWidget(simple)
         self.pages.addWidget(full)
@@ -82,26 +115,32 @@ class CameraEditor(QDialog):
         self.quality = QComboBox()
         self.quality.addItems(['HD', 'SD'])
         self.quality.setCurrentText(self.camera['quality'])
-        quality_form = QFormLayout()
-        quality_form.addRow('기본 화질', self.quality)
-        body.addLayout(quality_form)
-        self.advanced = QPushButton('고급 설정 펼치기')
+        options_row = QHBoxLayout()
+        quality_group = field_group('기본 화질', self.quality)
+        quality_group.setFixedWidth(108)
+        options_row.addWidget(quality_group)
+        options_row.addStretch()
+        self.advanced = QPushButton('고급 설정')
+        self.advanced.setObjectName('disclosure')
+        self.advanced.setIcon(icon('down'))
+        self.advanced.setIconSize(QSize(14, 14))
         self.advanced.setCheckable(True)
-        body.addWidget(self.advanced, 0, Qt.AlignmentFlag.AlignLeft)
-        advanced = QWidget()
-        advanced_form = QFormLayout(advanced)
-        advanced_form.setContentsMargins(0, 4, 0, 4)
-        advanced_form.addRow('영상 경로 (HD)', self.fields['path'])
-        advanced_form.addRow('영상 경로 (SD)', self.fields['sd_url'])
+        options_row.addWidget(self.advanced, 0, Qt.AlignmentFlag.AlignBottom)
+        body.addLayout(options_row)
+        self.advanced_panel = QWidget()
+        advanced_form = QVBoxLayout(self.advanced_panel)
+        advanced_form.setContentsMargins(0, 0, 0, 0)
+        advanced_form.setSpacing(10)
+        advanced_form.addWidget(field_group('영상 경로 (HD)', self.fields['path']))
+        advanced_form.addWidget(field_group('영상 경로 (SD)', self.fields['sd_url']))
         self.sd_url.setPlaceholderText('/onvif2 또는 RTSP 주소')
         hint = QLabel('ipTIME: HD /onvif1 · SD /onvif2\nSD는 영상 경로나 별도의 RTSP 주소를 입력할 수 있습니다.')
         hint.setWordWrap(True)
-        hint.setStyleSheet('color:#96a9c3;')
-        advanced_form.addRow(hint)
-        body.addWidget(advanced)
-        advanced.hide()
-        self.advanced.toggled.connect(lambda on: (advanced.setVisible(on),
-            self.advanced.setText('고급 설정 접기' if on else '고급 설정 펼치기')))
+        hint.setStyleSheet('color:#96a9c3;font-size:10px;')
+        advanced_form.addWidget(hint)
+        body.addWidget(self.advanced_panel)
+        self.advanced_panel.hide()
+        self.advanced.toggled.connect(self.toggle_advanced)
         body.addStretch()
         scroll.setWidget(content)
         root.addWidget(scroll, 1)
@@ -120,7 +159,6 @@ class CameraEditor(QDialog):
         connection_row.addWidget(self.check)
         connection_row.addWidget(self.cancel_check)
         connection_row.addStretch()
-        root.addLayout(connection_row)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
         save = buttons.button(QDialogButtonBox.StandardButton.Save)
         save.setText('변경 반영' if camera else '목록에 추가')
@@ -128,7 +166,8 @@ class CameraEditor(QDialog):
         buttons.button(QDialogButtonBox.StandardButton.Cancel).setText('취소')
         buttons.accepted.connect(self.validate)
         buttons.rejected.connect(self.reject)
-        root.addWidget(buttons)
+        connection_row.addWidget(buttons)
+        root.addLayout(connection_row)
         self.probe = ConnectionProbe(self)
         self.probe.finished.connect(self.probe_finished)
         self.finished.connect(lambda *_: self.probe.cancel(notify=False))
@@ -145,6 +184,18 @@ class CameraEditor(QDialog):
         self.mode.currentIndexChanged.connect(self.switch_mode)
         self._simple_snapshot = self.simple_fields()
         self._preserve_full_draft = False
+        self.fit_form()
+
+    def fit_form(self):
+        self.pages.updateGeometry()
+        height = (420 if self.mode.currentIndex() == 0 else 370) + (150 if self.advanced.isChecked() else 0)
+        screen = self.screen().availableGeometry()
+        self.resize(min(self.width(), screen.width()), min(height, screen.height() - 60))
+
+    def toggle_advanced(self, on):
+        self.advanced_panel.setVisible(on)
+        self.advanced.setIcon(icon('up' if on else 'down'))
+        self.fit_form()
 
     def show_notice(self, text):
         if self.isVisible():
@@ -188,6 +239,7 @@ class CameraEditor(QDialog):
             self._simple_snapshot = self.simple_fields()
             self._preserve_full_draft = True
         self.pages.setCurrentIndex(index)
+        self.fit_form()
 
     def collect(self):
         url = self.simple_url() if self.mode.currentIndex() == 0 else self.full_url.text().strip()

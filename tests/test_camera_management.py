@@ -78,11 +78,15 @@ class ManagementEntry(unittest.TestCase):
 
     def test_registry_details_and_actions_are_compact(self):
         manager = CameraManager([self.camera], layout=1, statuses={self.camera['id']: '재생 중'})
+        for key in ('host', 'username'):
+            self.assertFalse(manager.details[key].public)
+            self.assertFalse(manager.details[key].required)
+            self.assertFalse(manager.details[key].revealed)
+            self.assertFalse(manager.details[key].eye.isHidden())
+        manager.details['host'].toggle()
+        manager.details['username'].toggle()
         self.assertEqual(manager.details['host'].edit.text(), '127.0.0.1:8554')
         self.assertEqual(manager.details['username'].edit.text(), 'viewer')
-        for key in ('host', 'username'):
-            self.assertTrue(manager.details[key].public)
-            self.assertTrue(manager.details[key].eye.isHidden())
         for key in ('password', 'url', 'sd_url'):
             self.assertTrue(manager.details[key].required)
             self.assertFalse(manager.details[key].revealed)
@@ -98,7 +102,7 @@ class ManagementEntry(unittest.TestCase):
         actions = [action.text() for action in menu.actions()]
         self.assertIn('카메라 수정', actions)
         self.assertIn('사용 안 함', actions)
-        self.assertIn('RTSP 주소 복사', actions)
+        self.assertFalse(any('복사' in action for action in actions))
         menu.deleteLater()
         manager.deleteLater()
 
@@ -146,7 +150,7 @@ class ManagementEntry(unittest.TestCase):
                 self.assertFalse(editor.fields[key].revealed)
             manager.details['password'].toggle()
             self.assertTrue(authorize.call_args.kwargs['required'])
-            manager.copy_rtsp('HD')
+            manager.details['url'].copy_value()
             self.assertTrue(authorize.call_args.kwargs['required'])
             field = manager.details['password']
             field.reveal()  # Simulate a prior successful verification.
@@ -155,6 +159,16 @@ class ManagementEntry(unittest.TestCase):
             self.assertTrue(authorize.call_args.kwargs['required'])
         editor.deleteLater()
         manager.deleteLater()
+
+    def test_empty_fields_have_no_copy_or_reveal_action(self):
+        editor = CameraEditor()
+        for key in ('password', 'full_url', 'sd_url'):
+            self.assertFalse(editor.fields[key].copy_button.isEnabled())
+            self.assertFalse(editor.fields[key].eye.isEnabled())
+        editor.password.setText('typed')
+        self.assertTrue(editor.fields['password'].copy_button.isEnabled())
+        self.assertTrue(editor.fields['password'].eye.isEnabled())
+        editor.deleteLater()
 
     def test_verification_failure_success_and_expiry(self):
         class FakeConsent(QObject):
@@ -183,8 +197,48 @@ class ManagementEntry(unittest.TestCase):
             manager.privacy.grant_timer.timeout.emit()
             self.assertFalse(field.revealed)
             self.assertEqual(field.edit.text(), '••••••••')
-            self.assertEqual(manager.details['host'].edit.text(), '127.0.0.1:8554')
+            self.assertEqual(manager.details['host'].edit.text(), '••••••••')
         manager.done(QDialog.DialogCode.Rejected)
+        manager.deleteLater()
+
+    def test_inline_copy_of_hidden_address_needs_no_auth_and_keeps_hidden(self):
+        manager = CameraManager([self.camera])
+        manager.show()
+        QTest.qWait(35)
+        with patch('privacy.secure_clipboard') as clipboard, patch('privacy.ConsentRequest') as consent:
+            for key, expected in [('host', '127.0.0.1:8554'), ('username', 'viewer')]:
+                field = manager.details[key]
+                self.assertIs(field.copy_button.parentWidget(), field.edit)
+                self.assertTrue(field.edit.rect().contains(field.copy_button.geometry()))
+                self.assertTrue(field.edit.rect().contains(field.eye.geometry()))
+                field.copy_button.click()
+                clipboard.return_value.copy.assert_called_with(expected)
+                self.assertFalse(field.revealed)
+            consent.assert_not_called()
+        manager.done(QDialog.DialogCode.Rejected)
+        manager.deleteLater()
+
+    def test_secret_copy_waits_for_auth_and_dialogs_use_compact_sizes(self):
+        manager = CameraManager([self.camera])
+        editor = CameraEditor(self.camera, manager, privacy=manager.privacy)
+        self.assertLessEqual(manager.width(), 820)
+        self.assertLessEqual(manager.height(), 540)
+        self.assertLessEqual(editor.width(), 520)
+        simple_height = editor.height()
+        editor.mode.setCurrentIndex(1)
+        self.assertLess(editor.height(), simple_height)
+        editor.advanced.setChecked(True)
+        self.assertGreater(editor.height(), simple_height)
+        with patch('privacy.secure_clipboard') as clipboard, patch.object(manager.privacy, 'authorize') as authorize:
+            for field in (manager.details['password'], manager.details['url'], editor.fields['password'], editor.fields['full_url']):
+                field.copy_button.click()
+                self.assertTrue(authorize.call_args.kwargs['required'])
+                clipboard.return_value.copy.assert_not_called()
+                authorize.call_args.args[0]()  # Simulate a successful verification callback.
+                clipboard.return_value.copy.assert_called_with(field.value())
+                clipboard.return_value.copy.reset_mock()
+                self.assertFalse(field.revealed)
+        editor.deleteLater()
         manager.deleteLater()
 
 

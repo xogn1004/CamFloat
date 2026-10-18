@@ -23,3 +23,23 @@ QMenu::item{padding:7px 18px;} QMenu::item:selected{background:#324e74;}
 QMenu::item:disabled{color:#6c7b90;}
 QToolTip{background:#1b2432;color:#e4ecf8;border:1px solid #364358;padding:6px;}
 '''
+
+# Camera forms share one density and control baseline; help dialogs keep STYLE.
+CAMERA_STYLE = STYLE + '''
+QLineEdit,QComboBox,QSpinBox {padding:4px 8px;min-height:18px;max-height:18px;border-radius:5px;}
+QSpinBox {padding-right:24px;}
+QPushButton {padding:6px 12px;min-height:18px;}
+QPushButton#disclosure {background:transparent;color:#a9c5e8;text-align:left;padding:4px 0;}
+QPushButton#disclosure:hover {color:#dcecff;}
+QToolButton#fieldAction {padding:3px;border-radius:4px;background:transparent;}
+QToolButton#fieldAction:hover {background:#3a4b63;}
+QToolButton#fieldAction:focus {background:#3a4b63;}
+QToolButton#fieldAction:disabled {background:transparent;}
+QHeaderView::section {padding:7px;}
+QTabBar::tab {padding:8px 14px;}
+QLabel#fieldCaption {color:#aebfd5;font-size:11px;}
+QScrollBar:vertical {background:transparent;width:7px;margin:2px 0;}
+QScrollBar::handle:vertical {background:#435169;min-height:24px;border-radius:3px;}
+QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical {height:0;}
+QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical {background:transparent;}
+'''

@@ -14,7 +14,7 @@ from camera_model import (camera_display_name, camera_url, default_config,
 from camera_editor import CameraEditor
 from icons import icon
 from privacy import PrivacyController, SensitiveField
-from ui_theme import STYLE
+from ui_theme import CAMERA_STYLE
 
 
 class CameraListModel(QAbstractTableModel):
@@ -75,17 +75,17 @@ class CameraManager(QDialog):
         self.slots = self.layout_slots[str(layout)]
         self.assignment_changed = False
         self.setWindowTitle('카메라 관리')
-        self.setStyleSheet(STYLE)
-        self.resize(960, 640)
-        self.setMinimumSize(760, 520)
+        self.setStyleSheet(CAMERA_STYLE)
+        self.resize(820, 540)
+        self.setMinimumSize(720, 480)
         self.privacy = PrivacyController(self)
         self.buttons = {}
         root = QVBoxLayout(self)
-        root.setContentsMargins(22, 18, 22, 16)
-        root.setSpacing(12)
+        root.setContentsMargins(18, 14, 18, 14)
+        root.setSpacing(10)
         header = QHBoxLayout()
         title = QLabel('카메라 관리')
-        title.setStyleSheet('font-size:21px;font-weight:600;')
+        title.setStyleSheet('font-size:18px;font-weight:600;')
         header.addWidget(title)
         header.addStretch()
         add = self.action_button('add', '카메라 추가', self.add_camera, 'add')
@@ -131,7 +131,7 @@ class CameraManager(QDialog):
     def build_registry_tab(self):
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, 12, 0, 0)
+        layout.setContentsMargins(0, 10, 0, 0)
         filters = QHBoxLayout()
         self.search = QLineEdit()
         self.search.setPlaceholderText('카메라 번호·별명 검색')
@@ -154,9 +154,9 @@ class CameraManager(QDialog):
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setShowGrid(False)
         self.table.verticalHeader().hide()
-        self.table.verticalHeader().setDefaultSectionSize(44)
+        self.table.verticalHeader().setDefaultSectionSize(34)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for col, width in ((0, 50), (2, 46), (3, 80), (4, 30)):
+        for col, width in ((0, 40), (2, 42), (3, 68), (4, 28)):
             self.table.setColumnWidth(col, width)
         self.table.selectionModel().selectionChanged.connect(lambda *_: self.update_buttons())
         self.table.doubleClicked.connect(lambda index: self.edit_camera() if index.column() != 4 else None)
@@ -174,30 +174,32 @@ class CameraManager(QDialog):
         splitter.addWidget(left)
         detail_scroll = QScrollArea()
         detail_scroll.setWidgetResizable(True)
-        detail_scroll.setMinimumWidth(300)
+        detail_scroll.setMinimumWidth(290)
         detail = QFrame()
         detail.setObjectName('detail')
         details = QVBoxLayout(detail)
-        details.setContentsMargins(16, 16, 16, 16)
+        details.setContentsMargins(14, 12, 14, 12)
         details.setSpacing(8)
         self.detail_title = QLabel('카메라를 선택하세요')
         self.detail_title.setTextFormat(Qt.TextFormat.PlainText)
         self.detail_title.setWordWrap(True)
-        self.detail_title.setStyleSheet('font-size:17px;font-weight:600;')
+        self.detail_title.setStyleSheet('font-size:15px;font-weight:600;')
         details.addWidget(self.detail_title)
         self.details = {}
         for key, label in [('host', '주소'), ('username', '아이디'), ('password', '비밀번호'),
                             ('url', 'RTSP 주소'), ('sd_url', 'RTSP 주소2 (SD)')]:
+            group = QVBoxLayout()
+            group.setSpacing(4)
             caption = QLabel(label)
-            caption.setStyleSheet('color:#b7c8de;font-size:11px;')
-            details.addWidget(caption)
-            field = SensitiveField(self.privacy, label, required=key not in ('host', 'username'),
-                                   public=key in ('host', 'username'))
+            caption.setObjectName('fieldCaption')
+            group.addWidget(caption)
+            field = SensitiveField(self.privacy, label, required=key not in ('host', 'username'))
             self.details[key] = field
-            details.addWidget(field)
-        description = QLabel('비밀번호·RTSP 주소는 본인인증 후 30초 동안 확인할 수 있습니다.')
+            group.addWidget(field)
+            details.addLayout(group)
+        description = QLabel('비밀번호·RTSP는 본인인증 후 30초간 표시됩니다.')
         description.setWordWrap(True)
-        description.setStyleSheet('color:#96a9c3;font-size:11px;')
+        description.setStyleSheet('color:#96a9c3;font-size:10px;')
         details.addWidget(description)
         details.addStretch()
         self.buttons['edit'] = QAction(icon('edit'), '카메라 수정', self)
@@ -208,7 +210,7 @@ class CameraManager(QDialog):
         self.buttons['delete'].triggered.connect(self.delete_camera)
         detail_scroll.setWidget(detail)
         splitter.addWidget(detail_scroll)
-        splitter.setSizes([520, 350])
+        splitter.setSizes([440, 330])
         layout.addWidget(splitter, 1)
         self.tabs.addTab(page, '카메라 목록')
 
@@ -459,11 +461,6 @@ class CameraManager(QDialog):
         menu.addAction(self.buttons['edit'])
         menu.addAction(self.buttons['enable'])
         menu.addSeparator()
-        available = not self.selected_camera().get('connection_locked')
-        menu.addAction(icon('copy'), 'RTSP 주소 복사', lambda: self.copy_rtsp('HD')).setEnabled(available)
-        menu.addAction(icon('copy'), 'RTSP 주소2 (SD) 복사', lambda: self.copy_rtsp('SD')).setEnabled(
-            available and supports_quality(self.selected_camera()))
-        menu.addSeparator()
         menu.addAction(self.buttons['delete'])
         return menu
 
@@ -473,18 +470,6 @@ class CameraManager(QDialog):
             return
         menu.exec(self.table.viewport().mapToGlobal(self.table.visualRect(index).bottomLeft()))
         menu.deleteLater()
-
-    def copy_rtsp(self, quality=None):
-        camera = self.selected_camera()
-        if not camera or camera.get('connection_locked'):
-            return
-        # Only explicit HD / SD override the configured quality.
-        selected_quality = quality if quality in ('HD', 'SD') else camera['quality']
-        if selected_quality == 'SD' and not supports_quality(camera):
-            self.show_notice('이 카메라는 SD 주소가 설정되지 않았습니다.')
-            return
-        value = camera_url(dict(camera, quality=selected_quality))
-        self.privacy.copy(value, 'RTSP 주소를 복사했습니다. 30초 후 클립보드에서 지웁니다.', required=True)
 
     def accept(self):
         self.privacy.hide_all()

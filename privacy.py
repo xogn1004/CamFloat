@@ -6,7 +6,7 @@ import weakref
 from ctypes import wintypes
 from shiboken6 import isValid
 
-from PySide6.QtCore import QAbstractNativeEventFilter, QByteArray, QEvent, QMimeData, QObject, Qt, QTimer, Signal
+from PySide6.QtCore import QAbstractNativeEventFilter, QByteArray, QEvent, QMimeData, QObject, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QGuiApplication, QKeySequence
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLineEdit, QMenu, QToolButton, QWidget
 
@@ -199,6 +199,10 @@ class PrivateLineEdit(QLineEdit):
         self.setDragEnabled(False)
         self.setInputMethodHints(Qt.InputMethodHint.ImhSensitiveData | Qt.InputMethodHint.ImhNoPredictiveText)
 
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.field.position_actions()
+
     def keyPressEvent(self, event):
         if event.matches(QKeySequence.StandardKey.Copy) or event.matches(QKeySequence.StandardKey.Cut):
             if self.field.revealed and self.hasSelectedText():
@@ -230,30 +234,66 @@ class SensitiveField(QWidget):
         controller.fields.add(self)
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(5)
+        row.setSpacing(0)
         self.edit = PrivateLineEdit(self)
         self.edit.setReadOnly(not editable)
         self.edit.setAccessibleName(label)
         row.addWidget(self.edit, 1)
-        self.eye = QToolButton(self)
+        self.eye = QToolButton(self.edit)
         self.eye.setIcon(icon('eye'))
-        self.eye.setFixedSize(30, 32)
+        self.eye.setObjectName('fieldAction')
+        self.eye.setFixedSize(24, 24)
+        self.eye.setIconSize(QSize(15, 15))
+        self.eye.setAccessibleName(f'{label} 보기')
+        self.eye.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.eye.setCursor(Qt.CursorShape.PointingHandCursor)
         self.eye.setToolTip(f'{label} 보기 · 30초 후 숨김')
         self.eye.clicked.connect(self.toggle)
-        row.addWidget(self.eye)
         self.eye.setVisible(not public)
+        self.copy_button = QToolButton(self.edit)
+        self.copy_button.setObjectName('fieldAction')
+        self.copy_button.setIcon(icon('copy'))
+        self.copy_button.setIconSize(QSize(14, 14))
+        self.copy_button.setFixedSize(24, 24)
+        self.copy_button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
+        self.copy_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.copy_button.setAccessibleName(f'{label} 복사')
+        self.copy_button.setToolTip(f'{label} 복사' + (' · 본인인증 필요' if required else ''))
+        self.copy_button.clicked.connect(self.copy_value)
+        self.edit.textChanged.connect(self.update_actions)
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.setInterval(30000)
         self.timer.timeout.connect(self.conceal)
         self.set_value(value)
 
+    def position_actions(self):
+        if not hasattr(self, 'copy_button'):
+            return
+        right = self.edit.width() - 4
+        top = max(0, (self.edit.height() - 24) // 2)
+        self.copy_button.move(right - 24, top)
+        if not self.public:
+            self.eye.move(right - 48, top)
+        self.edit.setTextMargins(0, 0, 52 if not self.public else 28, 0)
+
+    def update_actions(self, *_):
+        if hasattr(self, 'copy_button'):
+            self.copy_button.setEnabled(bool(self.value()))
+            self.eye.setEnabled(bool(self.value()))
+
     def set_value(self, value):
         self._value = str(value or '')
         if self.editable:
             self.edit.setText(self._value)
         self.conceal()
-        self.eye.setEnabled(bool(self._value) or self.editable)
+        self.update_actions()
+
+    def copy_value(self):
+        value = self.value()
+        if value:
+            self.controller.copy(value, f'{self.label}를 복사했습니다. 30초 후 클립보드에서 지웁니다.',
+                                 required=self.required)
 
     def value(self):
         return self.edit.text() if self.editable else self._value
