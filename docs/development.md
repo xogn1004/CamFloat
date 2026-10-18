@@ -61,6 +61,7 @@ cd CamFloat
 | 첫 실행·바로가기 | `check.bat shortcuts` |
 | 수동 회전 시험 도구 (가상 기기로 검사) | `check.bat ptz` |
 | 스피커 시험 도구·시간 설정 (가상 기기로 검사) | `check.bat talkback` |
+| Android APK 조사 도구 (가상 ADB로 검사) | `check.bat android` |
 
 여러 영역은 `check.bat files shortcuts`처럼 함께 지정합니다. 중복 영역은 한 번만 실행합니다. 전체 검사는 `full`을 명시할 때만 실행하며 다른 영역과 섞을 수 없습니다.
 
@@ -69,6 +70,8 @@ cd CamFloat
 별도의 실제 카메라 회전 시험은 `camera-control-test.bat`입니다. 일반 검사 명령에 포함되지 않으며 사용자가 대상을 선택하고 이동을 요청할 때만 조작합니다. `--probe`는 기능 조회만 수행합니다. [지원 조사와 시험 방법](post-release-plan.md#후속-onvif-조사와-시험-도구)을 먼저 확인하세요.
 
 스피커 시험은 `camera-speaker-test.bat`입니다. 카메라 선택 후 대기·전송 시간을 입력하거나 `--delay 20 --duration 5`로 지정할 수 있습니다. 마이크·실제 녹음 파일 대신 작은 합성음을 사용합니다. `--probe`는 열기·닫기만 요청합니다. 일반 검사와 실제 카메라 청취 시험을 구분하며 [말하기 조사](post-release-plan.md#말하기-전송-경로-조사)를 참고하세요.
+
+Android 제조사 앱 조사 도구는 `android-app-check.bat`입니다. 공식 [Platform-Tools](https://developer.android.com/tools/releases/platform-tools)의 ADB·DLL을 `%LOCALAPPDATA%/CamFloatQA/android/platform-tools`에 준비하고, 휴대폰에서 USB 디버깅·PC 연결을 허용해야 합니다. 도구는 USB 기기 하나만 대상으로 `com.cctv.iptime` APK만 읽습니다. APK와 결과는 `verification/current/android-app`에 보관하고 실행·배포하지 않습니다. `check.bat android`는 가상 ADB와 합성 APK만 사용합니다.
 
 ### 릴리즈 전체 검사
 

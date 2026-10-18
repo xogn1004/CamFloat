@@ -77,6 +77,12 @@
 
 현재 위치·복원 위치가 확보되지 않아 숨김 이동은 수행하지 않았습니다. 반복 이동 시간을 누적해 이전 위치를 추측하는 방식으로 복원을 구현하지 않습니다. 다음 단계는 제조사 앱의 실제 저장 위치·OFF/ON 통신 확인이며, 휴대폰 환경 확인 후 해당 앱으로 범위를 제한해 조사합니다.
 
+사용 휴대폰은 Android로 확인됐습니다. 우선 USB로 승인된 휴대폰에서 `com.cctv.iptime`의 APK만 읽어 SDK·제어 명령의 단서를 조사합니다. `android-app-check.bat`은 해당 패키지의 `pm path`와 APK `pull`만 수행하며 앱 설치·앱 데이터·계정·사진·다른 앱·logcat 수집을 하지 않습니다. APK는 실행하지 않고 ZIP 데이터로만 읽습니다. SDK 표식이나 단어 발견은 호환성의 증거가 아닌 조사 단서입니다.
+
+공식 Google Platform-Tools 37.0.1의 ADB와 필요한 DLL·고지를 로컬 `%LOCALAPPDATA%/CamFloatQA/android/platform-tools`에 준비했습니다. Google 저장소 메타데이터의 크기·체크섬으로 아카이브를 검증했습니다. 휴대폰이 아직 연결·승인되지 않아 실제 APK는 확보하지 못했습니다. 휴대폰에서 USB 디버깅과 이 PC의 연결을 직접 허용해야 이어갈 수 있습니다. 준비 방법은 [Android 공식 안내](https://developer.android.com/tools/adb#Enabling)를 따릅니다.
+
+APK와 분석 결과는 Git에서 제외된 `verification/current/android-app`에만 둡니다. 분석 결과에는 파일 체크섬·라이브러리 이름·고정된 키워드 표식만 남기며 APK에서 읽은 임의의 문자열·주소·키를 보고서에 복사하지 않습니다. 이 단계는 통신 캡처나 카메라 조작을 수행하지 않습니다.
+
 ### 말하기 전송 경로 조사
 
 두 기기의 표준 음성 디코더·출력 설정 조회도 응답 없이 연결이 종료됐습니다. [공개 말하기 구현](https://github.com/realldz/yoosee-intercom)의 RTSP 확장 명령 형식을 후보로 시험했으며, 내부망 기기 한 대에서 `AudioCtlCmd:OPEN`·`CLOSE` 모두 `200 OK`를 받았습니다. 이 응답만으로 스피커 재생 지원이 확인된 것은 아닙니다.

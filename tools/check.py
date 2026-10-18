@@ -19,6 +19,7 @@ PROFILES = {
     'shortcuts': ('test_startup_shortcuts',),
     'ptz': ('test_camera_ptz_trial', 'test_camera_onvif_trial'),
     'talkback': ('test_camera_talkback_trial',),
+    'android': ('test_android_camera_app',),
     'full': (),
 }
 DESCRIPTIONS = {
@@ -30,6 +31,7 @@ DESCRIPTIONS = {
     'shortcuts': 'First-run shortcuts with simulated pin consent',
     'ptz': 'Manual PTZ tool protocol and stop scheduling with fake cameras',
     'talkback': 'Generated speaker tone and connection cleanup with fake cameras; no microphone',
+    'android': 'USB APK collector with fake ADB; no real phone or app data access',
     'full': 'All unit/regression tests; network and packaged EXE QC are separate',
 }
 
