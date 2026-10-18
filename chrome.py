@@ -137,7 +137,8 @@ class AppChrome(QWidget):
         painter.fillRect(self.rect(), Qt.GlobalColor.transparent)
 
     def reveal(self):
-        if self.host.modal_depth or self.host.closing or self.host.isMinimized() or not self.host.isVisible():
+        if (self.host.modal_depth or self.host.closing or self.host.isMinimized()
+                or not self.host.isVisible() or QApplication.activePopupWidget() is not None):
             return
         self.position()
         self.refresh()
@@ -152,6 +153,10 @@ class AppChrome(QWidget):
         if self.host.closing or self.host.modal_depth or self.host.isMinimized() or not self.host.isVisible():
             self.hide()
             self.host.position_screen_labels()
+            return
+        # A popup owns input and stacking until its entire submenu chain closes.
+        # In particular, do not show()/set_topmost() a hidden toolbar here.
+        if QApplication.activePopupWidget() is not None:
             return
         # No invisible window covers the video. Only the narrow top-centre zone
         # reveals controls; keep them while crossing from video to the toolbar.

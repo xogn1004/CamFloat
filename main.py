@@ -1153,6 +1153,10 @@ class PlayerWindow(QWidget):
         menu = QMenu(title, parent or self)
         menu.setStyleSheet(MENU_STYLE)
         menu.setWindowFlag(Qt.WindowType.NoDropShadowWindowHint, True)
+        if parent is not self.chrome:
+            # Screen menus must never compete with the independent tool HWND.
+            # The toolbar's own app menu keeps its anchor visible.
+            menu.aboutToShow.connect(self.chrome.hide)
         menu.aboutToHide.connect(lambda: QTimer.singleShot(0, self.repair_overlays))
         return menu
 
