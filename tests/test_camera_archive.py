@@ -21,9 +21,34 @@ class ArchiveTests(unittest.TestCase):
         for value in ('거실', '127.0.0.1', 'viewer', 'synthetic', 'rtsp://'):
             self.assertNotIn(value.encode(), first)
         result = archive.decode(first)[0]
-        for key in ('name', 'url', 'sd_url', 'volume', 'muted', 'enabled', 'quality'):
+        for key in ('name', 'url', 'sd_url', 'enabled', 'quality'):
             self.assertEqual(result[key], self.camera[key])
+        self.assertEqual(result['volume'], 100)
+        self.assertFalse(result['muted'])
         self.assertNotEqual(result['id'], self.camera['id'])
+
+    def test_export_payload_excludes_audio_fields(self):
+        blob = archive.encode([self.camera])
+        start = len(archive.MAGIC)
+        plaintext = AESGCM(archive._FORMAT_KEY).decrypt(
+            blob[start:start + 12], blob[start + 12:], archive.MAGIC)
+        record = json.loads(plaintext)['cameras'][0]
+        self.assertEqual(set(record), {'name', 'url', 'sd_url', 'quality', 'enabled'})
+
+    def test_legacy_audio_fields_are_ignored_on_decode_and_import(self):
+        for volume, muted in ((0, True), (43, True), (200, False), ('ignored', ['ignored'])):
+            with self.subTest(volume=volume, muted=muted):
+                record = dict(self.camera, volume=volume, muted=muted)
+                nonce = os.urandom(12)
+                payload = json.dumps(dict(version=1, cameras=[record])).encode()
+                blob = archive.MAGIC + nonce + AESGCM(archive._FORMAT_KEY).encrypt(
+                    nonce, payload, archive.MAGIC)
+                decoded = archive.decode(blob)[0]
+                self.assertEqual(decoded['volume'], 100)
+                self.assertFalse(decoded['muted'])
+                imported, _ = archive.import_candidates([record], [])
+                self.assertEqual(imported[0]['volume'], 100)
+                self.assertFalse(imported[0]['muted'])
 
     def test_invalid_truncated_modified_and_oversized_files_rejected(self):
         blob = archive.encode([self.camera])
@@ -36,7 +61,7 @@ class ArchiveTests(unittest.TestCase):
     def test_encrypted_but_invalid_schema_is_rejected(self):
         invalids = [dict(version=2, cameras=[self.camera]), dict(version=1, cameras=[]),
                     dict(version=True, cameras=[self.camera]),
-                    dict(version=1, cameras=[dict(self.camera, volume=True)]),
+                    dict(version=1, cameras=[dict(self.camera, quality='invalid')]),
                     dict(version=1, cameras=[dict(self.camera, enabled='yes')]),
                     dict(version=1, cameras=[dict(self.camera, url='file:///secret')]),
                     dict(version=1, cameras=[self.camera] * (archive.MAX_CAMERAS + 1))]

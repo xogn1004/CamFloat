@@ -31,27 +31,24 @@ def _record(raw):
     validate_rtsp_url(result['url'])
     if result['sd_url']:
         validate_rtsp_url(result['sd_url'])
-    for key, default in [('enabled', True), ('muted', False)]:
-        value = raw.get(key, default)
-        if type(value) is not bool:
-            raise ValueError('카메라 정보가 올바르지 않습니다.')
-        result[key] = value
+    enabled = raw.get('enabled', True)
+    if type(enabled) is not bool:
+        raise ValueError('카메라 정보가 올바르지 않습니다.')
+    result['enabled'] = enabled
     if raw.get('quality', 'HD') not in ('HD', 'SD'):
         raise ValueError('카메라 정보가 올바르지 않습니다.')
     result['quality'] = raw.get('quality', 'HD')
     if result['quality'] == 'SD' and not supports_quality(result):
         raise ValueError('SD 주소가 없습니다.')
-    volume = raw.get('volume', 100)
-    if type(volume) is not int or not 0 <= volume <= 100:
-        raise ValueError('카메라 정보가 올바르지 않습니다.')
-    result['volume'] = volume
+    # Audio is a local preference, never a transferred camera property.
+    # Ignore these fields even in older archives that used to include them.
     return result
 
 
 def encode(cameras):
     if not cameras or len(cameras) > MAX_CAMERAS:
         raise ValueError('내보낼 카메라 목록을 확인하세요.')
-    keys = ('name', 'url', 'sd_url', 'quality', 'enabled', 'muted', 'volume')
+    keys = ('name', 'url', 'sd_url', 'quality', 'enabled')
     records = [{key: checked[key] for key in keys} for checked in map(_record, cameras)]
     payload = json.dumps(dict(version=1, cameras=records), ensure_ascii=False, allow_nan=False).encode('utf-8')
     nonce = os.urandom(12)
