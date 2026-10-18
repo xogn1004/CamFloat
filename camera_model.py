@@ -5,7 +5,6 @@ import copy
 import ctypes
 import json
 import os
-import shutil
 import sys
 import re
 import tempfile
@@ -28,9 +27,20 @@ def bounded_int(value, default, low, high):
         return default
 
 
-def redact(text):
+def redact(text, cameras=()):
     # Query strings can contain access tokens, so redact the entire RTSP URL.
-    return re.sub(r'(?i)rtsp[s]?://[^\s\'\"<>]+', 'rtsp://[주소 숨김]', str(text))
+    result = re.sub(r'(?i)rtsp[s]?://[^\s\'\"<>]+', 'rtsp://[주소 숨김]', str(text))
+    for camera in cameras:
+        for key in ('url', 'sd_url'):
+            try:
+                parts = urlsplit(camera.get(key, ''))
+                for value in (parts.hostname, parts.username, parts.password):
+                    if value and len(value) >= 3:
+                        for spelling in {value, unquote(value)}:
+                            result = result.replace(spelling, '[정보 숨김]')
+            except ValueError:
+                pass
+    return result
 
 
 def data_path():
@@ -75,7 +85,23 @@ def new_camera(name='', url=''):
 
 def default_config():
     return dict(version=4, cameras=[], slots=[None] * 4, layout_slots=None, layout=1, split_orientation='horizontal', always_on_top=True,
-                hardware_acceleration=True, master_muted=False, opacity=100, geometry=None)
+                hardware_acceleration=True, master_muted=False, opacity=100, geometry=None,
+                verify_connection_info=False)
+
+
+def camera_display_name(camera):
+    """A host must not escape the privacy policy through an old default alias."""
+    name = str(camera.get('name') or '').strip()
+    fallback = f"카메라 {camera.get('number') or ''}".strip()
+    try:
+        host = urlsplit(camera.get('url', '')).hostname
+    except ValueError:
+        host = None
+    if 'rtsp://' in name.casefold() or 'rtsps://' in name.casefold():
+        return fallback
+    if host and host.casefold() in name.casefold():
+        return re.sub(re.escape(host), '[주소 숨김]', name, flags=re.IGNORECASE) if name.casefold() != host.casefold() else fallback
+    return name or fallback
 
 
 def ensure_camera_numbers(cameras):
@@ -132,6 +158,12 @@ def normalize(raw, encrypted=False):
     for key in ('always_on_top', 'hardware_acceleration'):
         result[key] = bool(raw.get(key, True))
     result['master_muted'] = bool(raw.get('master_muted', False))
+    policy = raw.get('verify_connection_info', False)
+    try:
+        result['verify_connection_info'] = crypt(policy, decrypt=True) == 'yes' if isinstance(policy, str) else bool(policy)
+    except (OSError, ValueError, UnicodeError):
+        result['verify_connection_info'] = True  # damaged protection policy fails closed
+        LOAD_WARNINGS.append('정보 보호 설정을 확인할 수 없어 본인 확인을 유지합니다.')
     layout = raw.get('layout', 1)
     result['layout'] = layout if type(layout) is int and layout in (1, 2, 4) else 1
     orientation = raw.get('split_orientation', 'horizontal')
@@ -164,10 +196,15 @@ def normalize(raw, encrypted=False):
         if not isinstance(camera['id'], str) or not camera['id'] or camera['id'] in seen:
             camera['id'] = uuid.uuid4().hex
         seen.add(camera['id'])
-        camera['url'] = crypt(camera['url'], decrypt=True) if encrypted else camera['url']
         camera['sd_url'] = camera['sd_url'] if isinstance(camera['sd_url'], str) else ''
-        if encrypted:
-            camera['sd_url'] = crypt(camera['sd_url'], decrypt=True)
+        try:
+            if encrypted:
+                for key in ('url', 'sd_url', 'name'):
+                    camera[key] = crypt(str(camera.get(key) or ''), decrypt=True)
+        except (OSError, ValueError, UnicodeError):
+            camera['protected_connection'] = {key: item.get(key, '') for key in ('url', 'sd_url', 'name')}
+            camera.update(url='', sd_url='', name='연결 정보 확인 필요', connection_locked=True)
+            LOAD_WARNINGS.append('일부 카메라의 연결 정보를 복호화하지 못했습니다. 원본 정보를 보존하며 해당 카메라는 연결하지 않습니다.')
         try:
             urlsplit(camera['url'])
             urlsplit(camera['sd_url'])
@@ -197,9 +234,76 @@ def normalize(raw, encrypted=False):
     return result
 
 
+def preserve_damaged(path):
+    # Even an unparsable legacy file may contain plaintext credentials.
+    payload = crypt(base64.b64encode(path.read_bytes()).decode('ascii'))
+    damaged = path.with_name(f'settings-damaged-{uuid.uuid4().hex[:8]}.json')
+    damaged.write_text(json.dumps(dict(format='camfloat-recovery-dpapi', data=payload)), encoding='utf-8')
+
+
+def encrypt_document(document, plaintext=False):
+    protected = copy.deepcopy(document)
+    for collection in ('cameras', 'streams'):
+        entries = protected.get(collection, [])
+        for camera in entries if isinstance(entries, list) else []:
+            if not isinstance(camera, dict):
+                continue
+            locked = camera.pop('protected_connection', None)
+            camera.pop('connection_locked', None)
+            if locked:
+                camera.update(locked)
+            for key in ('url', 'sd_url', 'name'):
+                value = camera.get(key)
+                if isinstance(value, str) and value and ((plaintext and not locked) or not value.startswith('dpapi:')):
+                    camera[key] = crypt(value)
+    policy = protected.get('verify_connection_info')
+    if isinstance(policy, bool):
+        protected['verify_connection_info'] = crypt('yes' if policy else 'no')
+    return protected
+
+
+def protect_old_backups(path):
+    candidates = [path.with_suffix('.backup.json'), path.with_name('settings-v1.backup.json')]
+    candidates.extend(path.parent.glob('settings-damaged-*.json'))
+    for backup in candidates:
+        if not backup.is_file():
+            continue
+        temporary = None
+        try:
+            raw = backup.read_bytes()
+            try:
+                document = json.loads(raw.decode('utf-8-sig'))
+            except (ValueError, UnicodeError):
+                document = None
+            if isinstance(document, dict) and document.get('format') == 'camfloat-recovery-dpapi':
+                continue
+            if isinstance(document, dict) and any(isinstance(document.get(k), list) for k in ('cameras', 'streams')):
+                protected = encrypt_document(document)
+                if protected == document:
+                    continue
+            else:
+                protected = dict(format='camfloat-recovery-dpapi', data=crypt(base64.b64encode(raw).decode('ascii')))
+            with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=backup.parent,
+                    prefix='protected-backup-', suffix='.tmp', delete=False) as stream:
+                temporary = Path(stream.name)
+                json.dump(protected, stream, ensure_ascii=False)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, backup)
+        except (OSError, ValueError, TypeError, UnicodeError):
+            LOAD_WARNINGS.append('이전 백업 일부를 암호화하지 못했습니다. 원본은 보존했습니다.')
+        finally:
+            if temporary and temporary.exists():
+                try:
+                    temporary.unlink()
+                except OSError:
+                    pass
+
+
 def load_config():
     LOAD_WARNINGS.clear()
     path = data_path()
+    protect_old_backups(path)
     if not path.exists():
         return default_config()
     try:
@@ -210,11 +314,10 @@ def load_config():
             restored = normalize(json.loads(backup.read_text(encoding='utf-8-sig')), encrypted=True)
         except (ValueError, TypeError, OSError):
             # Preserve the original for recovery before allowing a fresh config.
-            damaged = path.with_name(f'settings-damaged-{uuid.uuid4().hex[:8]}.json')
-            shutil.copy2(path, damaged)
+            preserve_damaged(path)
             LOAD_WARNINGS.append('설정 파일을 읽지 못해 새 설정으로 시작했습니다. 기존 파일은 settings-damaged 백업에 보관했습니다.')
             return default_config()
-        shutil.copy2(path, path.with_name(f'settings-damaged-{uuid.uuid4().hex[:8]}.json'))
+        preserve_damaged(path)
         LOAD_WARNINGS.append('설정 파일을 읽지 못해 직전 저장 백업을 복구했습니다.')
         return restored
 
@@ -222,21 +325,16 @@ def load_config():
 def save_config(config):
     ensure_layout_slots(config)
     path = data_path()
+    protect_old_backups(path)
     if path.exists() and not path.with_name('settings-v1.backup.json').exists():
         try:
             previous = json.loads(path.read_text(encoding='utf-8-sig'))
             if isinstance(previous, dict) and 'streams' in previous:
-                legacy = copy.deepcopy(previous)
-                for camera in legacy.get('streams', []):
-                    if isinstance(camera, dict) and camera.get('url') and not camera['url'].startswith('dpapi:'):
-                        camera['url'] = crypt(camera['url'])
+                legacy = encrypt_document(previous)
                 path.with_name('settings-v1.backup.json').write_text(json.dumps(legacy, ensure_ascii=False), encoding='utf-8')
         except (ValueError, TypeError):
             pass
-    stored = copy.deepcopy(config)
-    for camera in stored['cameras']:
-        camera['url'] = crypt(camera['url'])
-        camera['sd_url'] = crypt(camera.get('sd_url', ''))
+    stored = encrypt_document(config, plaintext=True)
     temp = None
     try:
         with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', dir=path.parent,
@@ -248,15 +346,7 @@ def save_config(config):
         if path.exists():
             try:
                 normalize(json.loads(path.read_text(encoding='utf-8-sig')), encrypted=True)
-                previous = json.loads(path.read_text(encoding='utf-8-sig'))
-                for collection in ('cameras', 'streams'):
-                    for camera in previous.get(collection, []):
-                        if not isinstance(camera, dict):
-                            continue
-                        for key in ('url', 'sd_url'):
-                            value = camera.get(key)
-                            if isinstance(value, str) and value and not value.startswith('dpapi:'):
-                                camera[key] = crypt(value)
+                previous = encrypt_document(json.loads(path.read_text(encoding='utf-8-sig')))
                 path.with_suffix('.backup.json').write_text(json.dumps(previous, ensure_ascii=False), encoding='utf-8')
             except (ValueError, TypeError, OSError):
                 pass

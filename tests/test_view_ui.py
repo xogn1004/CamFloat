@@ -114,7 +114,7 @@ class ViewUI(unittest.TestCase):
         self.assertEqual(self.window.config['slots'], original)
         self.window.apply_camera_registry(copy.deepcopy(dialog.cameras), dialog.slots)
         self.assertEqual(self.window.config['slots'][1], target)
-        dialog.close()
+        dialog.done(0)
         dialog.deleteLater()
 
 

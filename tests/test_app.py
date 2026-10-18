@@ -153,7 +153,7 @@ class WindowTests(unittest.TestCase):
         manager.move_camera(-1)
         self.assertEqual(manager.cameras[4]['id'], original[5]['id'])
         self.assertEqual(self.window.config['cameras'], original)
-        manager.close()
+        manager.done(QDialog.DialogCode.Rejected)
         manager.deleteLater()
         camera = new_camera('custom', 'rtsp://admin:a%40b@example.com:15554/custom?query=one')
         editor = CameraEditor(camera, self.window)

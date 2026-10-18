@@ -132,7 +132,7 @@ class SessionRules(unittest.TestCase):
         self.assertEqual(dialog.cameras[1]['number'], number)
         self.assertEqual(dialog.layout_slots['4'][0], camera_id)
         self.window.apply_camera_registry(dialog.cameras, layout_slots=dialog.layout_slots)
-        dialog.close()
+        dialog.done(0)
         dialog.deleteLater()
 
 

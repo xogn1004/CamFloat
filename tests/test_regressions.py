@@ -1,4 +1,5 @@
 import copy
+import base64
 import json
 import threading
 import time
@@ -52,7 +53,8 @@ class StorageRegressions(unittest.TestCase):
         data_path().write_text('{ invalid', encoding='utf-8')
         self.assertEqual(load_config(), default_config())
         self.assertTrue(LOAD_WARNINGS)
-        self.assertEqual(next(data_path().parent.glob('settings-damaged-*.json')).read_text(), '{ invalid')
+        recovered = json.loads(next(data_path().parent.glob('settings-damaged-*.json')).read_text())
+        self.assertEqual(base64.b64decode(crypt(recovered['data'], decrypt=True)), b'{ invalid')
         save_config(default_config())
         self.assertEqual(load_config(), normalize(default_config()))
 

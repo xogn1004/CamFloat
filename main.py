@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import copy
+import multiprocessing
 import sys
 import traceback
 import time
@@ -14,7 +16,7 @@ from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QMenu
 
 from camera_model import (APP_NAME, APP_TITLE, LOAD_WARNINGS, camera_url, crypt, data_path, default_config, find_vlc_directory,
     ensure_layout_slots, fill_empty_slots, load_config, make_vlc_instance,
-    new_camera, redact, save_config, supports_quality)
+    new_camera, redact, save_config, supports_quality, camera_display_name)
 from dialogs import CameraManager, UsageDialog
 from native_window import (app_is_foreground, configure_app_identity, is_topmost, set_topmost,
                           taskbar_icon_state, ensure_taskbar_minimize, taskbar_can_minimize, system_minimize)
@@ -28,7 +30,7 @@ from menu_labels import (CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, men
                          topmost_name, master_mute_name, hardware_name)
 from volume_popup import VolumePopup
 
-VERSION = '1.0.0-rc.2'
+VERSION = '1.0.0-rc.3'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -73,8 +75,10 @@ class PlayerTile(QWidget):
         return self.worker.player
 
     def play_camera(self, camera):
-        if not camera:
+        if not camera or camera.get('connection_locked'):
             self.stop()
+            if camera and camera.get('connection_locked'):
+                self.status_text = '연결 정보 확인 필요\n저장한 Windows 계정 또는 설정 백업을 확인하세요'
             return
         url = camera_url(camera)
         key = (camera['id'], url, self.host.config['hardware_acceleration'])
@@ -193,6 +197,7 @@ class InputOverlay(QWidget):
         badges.addStretch()
         label_box.addLayout(badges)
         self.camera_name = QLabel()
+        self.camera_name.setTextFormat(Qt.TextFormat.PlainText)
         self.camera_name.setStyleSheet('background:rgba(12,18,28,205);color:#ecf3ff;'
                                       'font-size:11px;padding:2px 6px;border-radius:4px;')
         label_box.addWidget(self.camera_name, 0, Qt.AlignmentFlag.AlignLeft)
@@ -367,7 +372,7 @@ class InputOverlay(QWidget):
 
     def refresh(self):
         camera = self.host.camera_for_slot(self.index)
-        name = camera['name'] if camera else '비어 있음'
+        name = camera_display_name(camera) if camera else '비어 있음'
         self.screen_badge.setText(self.host.slot_name(self.index))
         self.quality_badge.setText(camera['quality'] if camera else '—')
         self.camera_name.setText(self.camera_name.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight,
@@ -387,7 +392,7 @@ class InputOverlay(QWidget):
         self.following.setToolTip(tooltip('다음 SCREEN' if enlarged else '다음 카메라', '→'))
         self.previous.setAccessibleName(self.previous.toolTip())
         self.following.setAccessibleName(self.following.toolTip())
-        self.reload.setEnabled(bool(camera))
+        self.reload.setEnabled(bool(camera) and not camera.get('connection_locked'))
         self.mute.setEnabled(bool(camera))
         self.volume.setEnabled(bool(camera))
         self.fullscreen.setIcon(icon('restore' if self.host.isFullScreen() else 'fullscreen'))
@@ -926,7 +931,8 @@ class PlayerWindow(QWidget):
     def assign_camera(self, index, identifier, keep_focus=False):
         if index >= self.config['layout']:
             return
-        if identifier is not None and not any(c['id'] == identifier and c.get('enabled', True) for c in self.config['cameras']):
+        if identifier is not None and not any(c['id'] == identifier and c.get('enabled', True)
+                and not c.get('connection_locked') for c in self.config['cameras']):
             return
         self.assign_to_slots(self.config['slots'], index, identifier)
         self.refresh_layout()
@@ -963,9 +969,31 @@ class PlayerWindow(QWidget):
 
     def manage_cameras(self):
         with self.modal():
-            dialog = CameraManager(self.config['cameras'], self, layout_slots=self.config['layout_slots'], layout=self.config['layout'])
-            if dialog.exec() == QDialog.DialogCode.Accepted:
-                self.apply_camera_registry(dialog.cameras, layout_slots=dialog.layout_slots)
+            statuses = {}
+            for index, tile in enumerate(self.tiles[:self.config['layout']]):
+                camera = self.camera_for_slot(index)
+                if camera:
+                    statuses[camera['id']] = ('연결 확인 중' if tile.worker.busy else
+                        '연결 끊김' if tile.initial_failed or tile.retry_at is not None or tile.worker.error else
+                        '재생 중' if tile.ever_played else '미확인')
+            dialog = CameraManager(self.config['cameras'], self, layout_slots=self.config['layout_slots'],
+                layout=self.config['layout'], commit_callback=self.commit_camera_draft, statuses=statuses)
+            dialog.exec()
+            dialog.deleteLater()
+
+    def commit_camera_draft(self, cameras, layout_slots, verify_connection_info):
+        candidate = copy.deepcopy(self.config)
+        candidate.update(cameras=copy.deepcopy(cameras), layout_slots=copy.deepcopy(layout_slots),
+                         verify_connection_info=bool(verify_connection_info))
+        ensure_layout_slots(candidate)
+        try:
+            if self.persist_enabled:
+                save_config(candidate)
+        except (OSError, ValueError, TypeError):
+            return False
+        self.config = candidate
+        self.refresh_layout()
+        return True
 
     def apply_camera_registry(self, cameras, assigned_slots=None, layout_slots=None):
         previous = {c['id']: c.get('enabled', True) for c in self.config['cameras']}
@@ -1035,7 +1063,7 @@ class PlayerWindow(QWidget):
 
     def reconnect(self, index):
         camera = self.camera_for_slot(index)
-        if camera:
+        if camera and not camera.get('connection_locked'):
             self.tiles[index].retry_count = 0
             self.tiles[index].start_attempt(camera, reset=True)
 
@@ -1166,7 +1194,8 @@ class PlayerWindow(QWidget):
         group.setExclusive(True)
         enabled = [c for c in self.config['cameras'] if c.get('enabled', True)]
         for item in enabled:
-            action = menu.addAction(icon('camera'), f"{item['number']}. {item['name']}")
+            action = menu.addAction(icon('camera'), f"{item['number']}. {camera_display_name(item)}")
+            action.setEnabled(not item.get('connection_locked'))
             action.setCheckable(True)
             action.setChecked(bool(camera and camera['id'] == item['id']))
             group.addAction(action)
@@ -1181,7 +1210,7 @@ class PlayerWindow(QWidget):
     def build_context_menu(self, index, parent=None):
         menu = self.new_menu(parent=parent)
         camera = self.camera_for_slot(index)
-        title = menu.addAction(f"{self.slot_name(index)}  |  {camera['name'] if camera else '비어 있음'}")
+        title = menu.addAction(f"{self.slot_name(index)}  |  {camera_display_name(camera) if camera else '비어 있음'}")
         title.setEnabled(False)
         assign = menu.addMenu(icon('camera'), '이 화면의 카메라 지정')
         self.populate_camera_menu(assign, index)
@@ -1298,7 +1327,9 @@ def exception_handler(kind, value, trace):
         if path.exists() and path.stat().st_size > 1_000_000:
             path.replace(path.with_suffix('.previous.log'))
         with path.open('a', encoding='utf-8') as log:
-            log.write(redact(''.join(traceback.format_exception(kind, value, trace))) + '\n')
+            window = getattr(QApplication.instance(), '_camfloat_window', None)
+            cameras = window.config['cameras'] if window is not None else ()
+            log.write(redact(''.join(traceback.format_exception(kind, value, trace)), cameras) + '\n')
     except OSError:
         pass
     QMessageBox.critical(None, APP_NAME, '처리 중 오류가 발생했습니다.\n오류 기록: %LOCALAPPDATA%\\CamFloat\\error.log')
@@ -1371,6 +1402,7 @@ def main():
         for camera in config['cameras']:
             camera['muted'] = True
     window = PlayerWindow(config, instance, persist=not (checking or demo))
+    app._camfloat_window = window
     diagnostics = None
     if not checking and not demo:
         try:
@@ -1465,4 +1497,5 @@ def main():
 
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     raise SystemExit(main())

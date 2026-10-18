@@ -81,6 +81,21 @@ def icon(name, color='#e1eaf8'):
     elif name == 'edit':
         line(6, 15, 16, 5); line(16, 5, 20, 9); line(20, 9, 10, 19)
         line(10, 19, 5, 20); line(5, 20, 6, 15)
+    elif name in ('eye', 'eye_off'):
+        path = QPainterPath(QPointF(2, 12))
+        path.quadTo(12, 1, 22, 12)
+        path.quadTo(12, 23, 2, 12)
+        painter.drawPath(path)
+        painter.drawEllipse(QRectF(9, 9, 6, 6))
+        if name == 'eye_off':
+            line(4, 3, 20, 21)
+    elif name == 'copy':
+        painter.drawRoundedRect(QRectF(8, 8, 12, 13), 2, 2)
+        line(15, 4, 5, 4); line(5, 4, 5, 16)
+    elif name == 'lock':
+        painter.drawRoundedRect(QRectF(5, 10, 14, 11), 2, 2)
+        painter.drawArc(QRectF(8, 3, 8, 13), 0, 180 * 16)
+        line(12, 14, 12, 17)
     elif name == 'quality':
         painter.drawRoundedRect(QRectF(3, 5, 18, 14), 2, 2)
         painter.setFont(painter.font()); painter.drawText(QRectF(3, 5, 18, 14), Qt.AlignmentFlag.AlignCenter, 'HD')
