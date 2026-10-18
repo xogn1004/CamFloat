@@ -30,7 +30,8 @@ DEVICE = 'http://www.onvif.org/ver10/device/wsdl'
 MEDIA = 'http://www.onvif.org/ver10/media/wsdl'
 PTZ = 'http://www.onvif.org/ver20/ptz/wsdl'
 SCHEMA = 'http://www.onvif.org/ver10/schema'
-READ_OPERATIONS = {'GetCapabilities', 'GetProfiles', 'GetNodes', 'GetStatus'}
+READ_OPERATIONS = {'GetCapabilities', 'GetProfiles', 'GetNodes', 'GetStatus', 'GetPresets',
+                   'GetAudioOutputs', 'GetAudioDecoderConfigurations', 'GetAudioOutputConfigurations'}
 ALLOWED = READ_OPERATIONS | {'ContinuousMove', 'Stop'}
 ERRORS = (OSError, ValueError, http.client.HTTPException, ET.ParseError)
 for prefix, namespace in [('s', SOAP), ('wsse', WSSE), ('wsu', WSU), ('tds', DEVICE),
@@ -60,7 +61,7 @@ def envelope(parts, namespace, operation, profile_token=None, pan=None):
     op = element(element(root, SOAP, 'Body'), namespace, operation)
     if operation == 'GetCapabilities':
         element(op, DEVICE, 'Category', 'All')
-    if operation in ('Stop', 'ContinuousMove', 'GetStatus'):
+    if operation in ('Stop', 'ContinuousMove', 'GetStatus', 'GetPresets'):
         if not profile_token:
             raise ValueError('Profile required')
         element(op, PTZ, 'ProfileToken', profile_token)

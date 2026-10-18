@@ -35,6 +35,14 @@ class ONVIFTrialTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 trial.envelope(urlsplit(self.camera['url']), trial.DEVICE, op)
 
+    def test_preset_query_requires_profile_but_does_not_change_it(self):
+        with self.assertRaises(ValueError):
+            trial.envelope(urlsplit(self.camera['url']), trial.PTZ, 'GetPresets')
+        raw = trial.envelope(urlsplit(self.camera['url']), trial.PTZ, 'GetPresets', 'profile-token')
+        root = ET.fromstring(raw)
+        self.assertEqual(root.find('.//{' + trial.PTZ + '}ProfileToken').text, 'profile-token')
+        self.assertIsNone(root.find('.//{' + trial.PTZ + '}SetPreset'))
+
     def test_service_address_must_stay_on_same_device_and_known_port(self):
         self.assertEqual(trial.service_path('http://127.0.0.1:5000/onvif/deviceio_service', '127.0.0.1'), '/onvif/deviceio_service')
         for url in ('http://example.com:5000/onvif/ptz', 'http://127.0.0.1:80/onvif/ptz',
