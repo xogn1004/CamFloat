@@ -28,7 +28,7 @@ class BatchChanges(unittest.TestCase):
         actions = [a for a in menu.actions() if not a.isSeparator()]
         names = [a.text().split('\t')[0] for a in actions]
         self.assertEqual(names[:7], [LAYOUT, '전체 음소거', CAMERAS, '전체화면',
-            '항상 위에 해제', '하드웨어 가속 해제', OPACITY])
+            '항상 위에', '하드웨어 가속 해제', OPACITY])
         self.assertEqual(sum('CamFloat' in name for name in names), 1)
         self.assertIn(OPACITY, names)
         self.assertEqual(actions[4].text().split('\t')[1], 'Ctrl+T')

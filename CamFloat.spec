@@ -5,7 +5,7 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('camfloat.ico', '.')],
+    datas=[('camfloat.ico', '.'), ('vendor/vlc', 'vlc')],
     hiddenimports=['vlc'],
     hookspath=[],
     hooksconfig={},

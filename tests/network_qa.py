@@ -6,11 +6,12 @@ import subprocess
 import sys
 import time
 import ctypes
+import hashlib
 from ctypes import wintypes
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = ROOT / 'verification' / 'rtsp-keyframes-test.mp4'
+SOURCE = Path(os.environ.get('CAMFLOAT_QA_VIDEO') or ROOT / 'verification' / 'rtsp-keyframes-test.mp4')
 sys.path.insert(0, str(ROOT))
 from PySide6.QtCore import QTimer
 from PySide6.QtTest import QTest
@@ -133,6 +134,23 @@ try:
         ever=[t.ever_played for t in window.tiles], failed=[t.initial_failed for t in window.tiles])
     assert recorded, 'Successful playback was not recorded'
     report['initial_four_streams'] = True
+    # Check image pixels, not just advancing decoder counters or playback clocks.
+    from PySide6.QtGui import QImage
+    images = ROOT / 'verification' / 'current' / 'v100' / 'network'
+    images.mkdir(parents=True, exist_ok=True)
+    hashes = []
+    for index in range(2):
+        path = images / f'frame-{index}.png'
+        path.unlink(missing_ok=True)
+        assert window.tiles[0].player.video_take_snapshot(0, str(path), 0, 0) == 0
+        assert wait_for(path.exists, 5), 'Engine snapshot was not created'
+        image = QImage(str(path)).convertToFormat(QImage.Format.Format_RGB888)
+        assert not image.isNull()
+        hashes.append(hashlib.sha256(bytes(image.constBits())).hexdigest())
+        QTest.qWait(1300)
+    assert hashes[0] != hashes[1], 'Rendered video pixels did not change'
+    report['video_pixel_hashes'] = hashes
+    report['video_pixels_advance'] = True
     revisions = [t.worker.revision for t in window.tiles]
     native_handles = [int(t.winId()) for t in window.tiles]
     for index in (0, 1, 2, 3, 0):

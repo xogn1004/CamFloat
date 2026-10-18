@@ -1,0 +1,22 @@
+Bundled engine: libVLC 3.0.23, Windows x64, unmodified.
+Copyright VideoLAN and the VLC authors.
+
+Binary package (LGPL-2.1-or-later; GPL plugin add-on is NOT included):
+https://www.nuget.org/packages/VideoLAN.LibVLC.Windows/3.0.23
+https://api.nuget.org/v3-flatcontainer/videolan.libvlc.windows/3.0.23/videolan.libvlc.windows.3.0.23.nupkg
+SHA-256: 39d3035ccc9dcf58206f9888959b78f47f52eb2ee79af7f50b01c3342c279e7f
+
+Corresponding VLC source:
+https://download.videolan.org/pub/videolan/vlc/3.0.23/vlc-3.0.23.tar.xz
+https://code.videolan.org/videolan/vlc/-/tree/3.0.23
+The source archive contains COPYRIGHT, AUTHORS, COPYING.LIB, build scripts,
+and contrib/src package recipes, patches and upstream source locations for
+the bundled third-party libraries.
+Third-party source mirror:
+https://download.videolan.org/contrib/
+Upstream package/build scripts:
+https://code.videolan.org/videolan/libvlc-nuget
+
+The runtime libraries are separate from CamFloat and may be replaced with
+compatible user-modified versions. Keep the x64 engine DLLs and plugins
+from the same build together. No VLC source modifications were made.

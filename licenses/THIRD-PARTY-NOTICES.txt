@@ -44,6 +44,10 @@ Corresponding upstream sources and notices:
   https://doc.qt.io/qt-6/licenses-used-in-qt.html
   https://github.com/python/cpython
 
-VLC media player / libVLC is installed separately and is not bundled.
-  https://www.videolan.org/vlc/
-  https://code.videolan.org/videolan/vlc
+libVLC 3.0.23 (x64) is bundled, without modification, as separate DLLs and
+plugins in _internal/vlc. The VLC desktop application is not included.
+Official LGPL package: VideoLAN.LibVLC.Windows 3.0.23 (not the GPL package).
+LGPL-2.1-or-later license text: python-vlc-COPYING.txt
+Source availability and upstream build information: VLC-SOURCES.txt
+Users may replace these DLLs/plugins with a compatible build, including a
+modified build for debugging. CamFloat imposes no restriction on that use.

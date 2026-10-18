@@ -9,10 +9,10 @@ from PySide6.QtCore import QObject, QTimer, Signal
 def probe_worker(url, directory, result):
     from pathlib import Path
     from camera_model import make_vlc_instance
-    import vlc
     instance = player = media = None
     try:
         instance = make_vlc_instance(Path(directory), '--vout=dummy', '--aout=dummy', '--avcodec-hw=none')
+        import vlc
         player = instance.media_player_new()
         media = instance.media_new(url)
         media.add_option(':rtsp-tcp')

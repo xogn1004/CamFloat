@@ -31,7 +31,7 @@ from menu_labels import (CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, men
 from volume_popup import VolumePopup
 from hover_tips import HoverTips
 
-VERSION = '1.0.0-rc.4'
+VERSION = '1.0.0'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -407,7 +407,7 @@ class InputOverlay(QWidget):
             self.volume.setValue(camera['volume'])
             self.volume.blockSignals(False)
             self.value.setText(str(camera['volume']))
-            self.mute.setIcon(icon('muted' if self.host.audio_muted(camera) else 'volume'))
+            self.mute.setIcon(icon('muted' if self.host.audio_muted(camera) or camera['volume'] == 0 else 'volume'))
             name = '이 영상 음소거 해제' if camera['muted'] else '이 영상 음소거'
             if self.host.config.get('master_muted', False):
                 name = '전체 음소거 중 · 개별 ' + ('음소거 해제' if camera['muted'] else '음소거')
@@ -989,8 +989,11 @@ class PlayerWindow(QWidget):
             dialog.exec()
             dialog.deleteLater()
 
-    def commit_camera_draft(self, cameras, layout_slots, verify_connection_info):
+    def commit_camera_draft(self, cameras, layout_slots, verify_connection_info, *, reset=False):
         candidate = copy.deepcopy(self.config)
+        if reset:
+            from camera_model import reset_settings
+            candidate = reset_settings(cameras)
         candidate.update(cameras=copy.deepcopy(cameras), layout_slots=copy.deepcopy(layout_slots),
                          verify_connection_info=bool(verify_connection_info))
         ensure_layout_slots(candidate)
@@ -1000,6 +1003,17 @@ class PlayerWindow(QWidget):
         except (OSError, ValueError, TypeError):
             return False
         self.config = candidate
+        if reset:
+            self.save_timer.stop()
+            if self.fullscreen_geometry is not None:
+                self.exit_fullscreen(restore_previous=False)
+            self.focused_screen = None
+            self.select_slot(None)
+            self.resize(960, 540)
+            self.move(QApplication.primaryScreen().availableGeometry().topLeft() + QPoint(80, 80))
+            self.fit_to_screen()
+            self.set_always_on_top(candidate['always_on_top'])
+            self.apply_opacity()
         self.refresh_layout()
         return True
 
@@ -1379,14 +1393,14 @@ def main():
             return 0
     folder = find_vlc_directory()
     if folder is None:
-        QMessageBox.critical(None, APP_NAME, 'VLC media player를 설치한 뒤 다시 실행하세요.')
+        QMessageBox.critical(None, APP_NAME, '재생 파일이 없습니다. CamFloat 압축을 모두 풀고 다시 실행하세요.')
         return 1
     try:
         instance = make_vlc_instance(folder, *instance_options(profile))
         if instance is None:
             raise RuntimeError('VLC 초기화 실패')
     except (OSError, RuntimeError, NameError):
-        QMessageBox.critical(None, APP_NAME, 'VLC를 불러오지 못했습니다. 64비트 VLC를 설치하거나 복구 설치한 뒤 다시 실행하세요.')
+        QMessageBox.critical(None, APP_NAME, '재생 엔진을 불러오지 못했습니다. CamFloat 압축을 새로 풀고 다시 실행하세요.')
         return 1
     try:
         config = default_config() if checking or demo else load_config()
@@ -1495,12 +1509,44 @@ def main():
                     assert not manager.notice.isVisible()
                     manager.done(QDialog.DialogCode.Rejected)
                     manager.deleteLater()
+                import ctypes
+                from ctypes import wintypes
+                import vlc
+                loaded_path = ctypes.create_unicode_buffer(32768)
+                get_module_path = ctypes.windll.kernel32.GetModuleFileNameW
+                get_module_path.argtypes = [wintypes.HMODULE, wintypes.LPWSTR, wintypes.DWORD]
+                get_module_path.restype = wintypes.DWORD
+                assert get_module_path(vlc.dll._handle, loaded_path, len(loaded_path))
+                bundled = (Path(loaded_path.value).resolve() == (folder / 'libvlc.dll').resolve())
+                assert bundled, 'Loaded a different playback engine'
+                probe_ok = None
+                if demo:
+                    from connection_probe import ConnectionProbe
+                    from PySide6.QtCore import QEventLoop
+                    probe = ConnectionProbe(window)
+                    result = []
+                    loop = QEventLoop(window)
+                    probe.finished.connect(lambda success, message: (result.append(success), loop.quit()))
+                    timeout = QTimer(window)
+                    timeout.setSingleShot(True)
+                    timeout.timeout.connect(loop.quit)
+                    timeout.start(18000)
+                    probe.start(window.config['cameras'][0]['url'], folder)
+                    loop.exec()
+                    timeout.stop()
+                    probe.cancel(notify=False)
+                    probe.deleteLater()
+                    probe_ok = bool(result and result[0])
+                    assert probe_ok, 'Packaged connection-check subprocess failed'
                 report.update(ok=True, layouts=[1, 2, 4], topmost=True, stable_video_handles=True,
                               opacity=True, dpapi=True, vlc=True, sample_video_streams=video_streams,
                               taskbar_icon=taskbar, taskbar_system_minimize=True,
                               fullscreen_opacity_lock=True, master_mute_preserves_individual=True,
                               camera_archive_passwordless=True, camera_manager_entry=True,
-                              feedback_stable_layout=True)
+                              feedback_stable_layout=True, engine_path=loaded_path.value,
+                              engine_from_selected_directory=bundled,
+                              engine_bundled=folder.resolve() == (Path(getattr(sys, '_MEIPASS', '.')) / 'vlc').resolve(),
+                              connection_probe_subprocess=probe_ok)
                 code = 0
             except Exception:
                 report['error'] = traceback.format_exc()

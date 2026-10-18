@@ -80,7 +80,7 @@ class ReleaseRC1(unittest.TestCase):
         entries = [a for a in menu.actions() if not a.isSeparator()]
         self.assertEqual([a.text().split('\t')[0] for a in entries[:7]], [
             '화면 구성', '전체 음소거 해제', '카메라 관리…', '전체화면',
-            '항상 위에 해제', '하드웨어 가속 해제', '전체 투명도'])
+            '항상 위에', '하드웨어 가속 해제', '전체 투명도'])
         self.assertTrue(all(not a.isCheckable() for a in entries[:7]))
         menu.deleteLater()
 

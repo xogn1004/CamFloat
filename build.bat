@@ -10,6 +10,8 @@ if not exist ".venv\Scripts\python.exe" (
 call ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 goto :failed
 
+call ".venv\Scripts\python.exe" prepare_vlc.py
+if errorlevel 1 goto :failed
 call ".venv\Scripts\python.exe" make_icon.py
 if errorlevel 1 goto :failed
 
@@ -24,7 +26,7 @@ if errorlevel 1 goto :failed
 
 echo.
 echo Build complete: release\CamFloat\CamFloat.exe
-echo VLC media player must be installed on the PC that runs CamFloat.
+echo The playback engine is included. No VLC installation is required.
 exit /b 0
 
 :failed

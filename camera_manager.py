@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QComboBox, QDial
     QVBoxLayout, QWidget)
 
 from camera_model import (camera_display_name, camera_url, default_config,
-                          ensure_layout_slots, fill_empty_slots, supports_quality)
+                          ensure_layout_slots, fill_empty_slots, supports_quality, reset_settings)
 from camera_editor import CameraEditor
 from icons import icon
 from privacy import PrivacyController, SensitiveField
@@ -18,6 +18,7 @@ from ui_theme import CAMERA_STYLE
 from feedback import Feedback, confirm_action
 from camera_archive import encode, read_file, import_candidates
 from camera_transfer import ImportPreview
+from hover_tips import HoverTips
 
 
 class CameraListModel(QAbstractTableModel):
@@ -64,6 +65,8 @@ class CameraManager(QDialog):
     def __init__(self, cameras, parent=None, slots=None, layout_slots=None, layout=4,
                  *, verify_connection_info=None, commit_callback=None, statuses=None):
         super().__init__(parent)
+        self.tips = HoverTips(self)
+        self.settings_reset = False
         self.cameras = copy.deepcopy(cameras)
         self.edit_layout = layout
         self.commit_callback = commit_callback
@@ -79,8 +82,8 @@ class CameraManager(QDialog):
         self.assignment_changed = False
         self.setWindowTitle('카메라 관리')
         self.setStyleSheet(CAMERA_STYLE)
-        self.resize(820, 540)
-        self.setMinimumSize(720, 480)
+        self.resize(760, 500)
+        self.setMinimumSize(700, 460)
         self.privacy = PrivacyController(self)
         self.buttons = {}
         root = QVBoxLayout(self)
@@ -93,8 +96,9 @@ class CameraManager(QDialog):
         header.addStretch()
         self.file_menu_button = QToolButton()
         self.file_menu_button.setIcon(icon('more'))
-        self.file_menu_button.setToolTip('목록 불러오기 · 내보내기')
-        self.file_menu_button.setAccessibleName('목록 불러오기 · 내보내기')
+        self.file_menu_button.setToolTip('목록 메뉴')
+        self.file_menu_button.setAccessibleName('목록 메뉴')
+        self.tips.add(self.file_menu_button)
         self.file_menu_button.clicked.connect(self.file_menu)
         header.addWidget(self.file_menu_button)
         add = self.action_button('add', '카메라 추가', self.add_camera, 'add')
@@ -108,7 +112,7 @@ class CameraManager(QDialog):
         self.tabs.currentChanged.connect(lambda *_: self.privacy.hide_all())
         self.feedback = Feedback(self)
         self.notice = self.feedback
-        self.privacy.feedback.connect(self.feedback.show_message)
+        self.privacy.feedback.connect(self.show_notice)
         self.privacy.cleared.connect(self.feedback.clear_message)
         footer = QHBoxLayout()
         self.count_label = QLabel()
@@ -234,6 +238,7 @@ class CameraManager(QDialog):
         info.setIcon(icon('info'))
         info.setToolTip('분할마다 표시할 카메라를 저장합니다.\n2분할 좌우·상하는 같은 설정을 사용합니다.\n사용 안 함으로 바꾸면 화면에서 빠지고, 다시 사용하면 빈 화면부터 채웁니다.')
         info.setAccessibleName('화면별 카메라 도움말')
+        self.tips.add(info, click=True)
         row.addWidget(info)
         self.assignments = QGridLayout()
         self.screen_choices, self.screen_labels, self.screen_cards = [], [], []
@@ -261,7 +266,7 @@ class CameraManager(QDialog):
         self.tabs.addTab(page, '화면별 카메라')
 
     def snapshot(self):
-        return copy.deepcopy((self.cameras, self.layout_slots, self.verify_connection_info))
+        return copy.deepcopy((self.cameras, self.layout_slots, self.verify_connection_info, self.settings_reset))
 
     def selected_camera(self):
         row = self.table.currentRow()
@@ -354,8 +359,17 @@ class CameraManager(QDialog):
         for key, field in self.details.items():
             field.set_value(values.get(key, ''))
 
-    def show_notice(self, text):
-        self.feedback.show_message(text)
+    def show_notice(self, text, anchor=None):
+        owner = QApplication.activeModalWidget()
+        if owner is not None and owner is not self and self.isAncestorOf(owner):
+            # Export/authentication feedback belongs to the still-open delete
+            # confirmation, rather than appearing hidden behind it.
+            if not hasattr(owner, '_camfloat_feedback'):
+                owner._camfloat_feedback = Feedback(owner)
+                self.privacy.cleared.connect(owner._camfloat_feedback.clear_message)
+            owner._camfloat_feedback.show_message(text)
+        else:
+            self.feedback.show_message(text, anchor)
 
     def add_camera(self):
         number = max([c.get('number', 0) for c in self.cameras] + [0]) + 1
@@ -463,11 +477,66 @@ class CameraManager(QDialog):
         menu.deleteLater()
 
     def file_menu(self):
+        self.tips.clear()
         menu = QMenu(self)
         menu.addAction('목록 불러오기…', self.import_file)
         menu.addAction('목록 내보내기…', self.export_file).setEnabled(bool(self.cameras))
+        menu.addSeparator()
+        menu.addAction('카메라 전체 삭제…', self.delete_all).setEnabled(bool(self.cameras))
+        menu.addAction('설정 초기화…', self.reset_preferences)
         menu.exec(self.file_menu_button.mapToGlobal(self.file_menu_button.rect().bottomLeft()))
         menu.deleteLater()
+
+    def delete_all(self):
+        self.privacy.hide_all()
+        self.tips.clear()
+        box = QDialog(self)
+        box.setWindowTitle('카메라 전체 삭제')
+        content = QVBoxLayout(box)
+        content.setContentsMargins(20, 20, 20, 16)
+        message = QLabel('등록된 카메라가 모두 삭제됩니다.\n필요하면 먼저 내보내기로 백업하세요.')
+        message.setTextFormat(Qt.TextFormat.PlainText)
+        content.addWidget(message)
+        buttons = QHBoxLayout()
+        backup = QPushButton('내보내기…', box)
+        cancel = QPushButton('취소', box)
+        delete = QPushButton('전체 삭제', box)
+        buttons.addWidget(backup)
+        buttons.addStretch()
+        buttons.addWidget(cancel)
+        buttons.addWidget(delete)
+        for button in (backup, cancel, delete):
+            button.setAutoDefault(False)
+        cancel.setDefault(True)
+        cancel.setFocus()
+        backup.clicked.connect(self.export_file)
+        self.privacy.busy_changed.connect(backup.setDisabled)
+        delete.clicked.connect(box.accept)
+        cancel.clicked.connect(box.reject)
+        content.addLayout(buttons)
+        result = box.exec()
+        self.privacy.hide_all()
+        if result == QDialog.DialogCode.Accepted:
+            self.cameras.clear()
+            self.layout_slots = {str(n): [None] * 4 for n in (1, 2, 4)}
+            self.refresh()
+            self.show_notice('저장하면 모든 카메라가 삭제됩니다.')
+        box.deleteLater()
+
+    def reset_preferences(self):
+        self.privacy.hide_all()
+        if not confirm_action(self, '설정 초기화',
+                '카메라 목록을 제외한 모든 설정을 처음 상태로 되돌립니다.', '초기화'):
+            return
+        config = reset_settings(self.cameras)
+        self.cameras = config['cameras']
+        self.layout_slots = config['layout_slots']
+        self.edit_layout = 1
+        self.split_orientation = 'horizontal'
+        self.settings_reset = True
+        self.layout_choice.setCurrentIndex(self.layout_choice.findData(1))
+        self.refresh()
+        self.show_notice('저장하면 설정이 초기화됩니다.')
 
     def export_file(self):
         if not self.cameras:
@@ -480,7 +549,9 @@ class CameraManager(QDialog):
             except ValueError as error:
                 self.show_notice(str(error))
                 return
-            path, _ = QFileDialog.getSaveFileName(self, '목록 내보내기', '내 카메라.camfloat', 'CamFloat 카메라 목록 (*.camfloat)')
+            parent = QApplication.activeModalWidget()
+            parent = parent if parent is not None and self.isAncestorOf(parent) else self
+            path, _ = QFileDialog.getSaveFileName(parent, '목록 내보내기', '내 카메라.camfloat', 'CamFloat 카메라 목록 (*.camfloat)')
             if not path:
                 return
             if not path.lower().endswith('.camfloat'):
@@ -520,7 +591,8 @@ class CameraManager(QDialog):
 
     def accept(self):
         self.privacy.hide_all()
-        if self.commit_callback and not self.commit_callback(self.cameras, self.layout_slots, self.verify_connection_info):
+        options = {'reset': True} if self.settings_reset else {}
+        if self.commit_callback and not self.commit_callback(self.cameras, self.layout_slots, self.verify_connection_info, **options):
             self.show_notice('저장하지 못했습니다. 다시 시도하세요.')
             return
         super().accept()

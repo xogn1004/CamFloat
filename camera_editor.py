@@ -15,6 +15,7 @@ from privacy import PrivacyController, SensitiveField
 from icons import icon
 from ui_theme import CAMERA_STYLE
 from feedback import Feedback, confirm_action
+from hover_tips import HoverTips
 
 
 class InputPages(QStackedWidget):
@@ -41,6 +42,7 @@ def field_group(label, control):
 class CameraEditor(QDialog):
     def __init__(self, camera=None, parent=None, *, privacy=None, others=(), number=None):
         super().__init__(parent)
+        self.tips = HoverTips(self)
         self.camera = copy.deepcopy(camera or new_camera())
         self.editing = camera is not None
         self.others = others
@@ -64,6 +66,7 @@ class CameraEditor(QDialog):
         info.setIcon(icon('info'))
         info.setToolTip('비밀번호·RTSP 주소의 보기·복사에는 본인 확인이 필요합니다.\n비운 이름은 자동으로 정합니다.\n복사한 정보는 30초 후 클립보드에서 지워집니다.')
         info.setAccessibleName('카메라 입력 도움말')
+        self.tips.add(info, click=True)
         header.addWidget(info)
         root.addLayout(header)
         scroll = QScrollArea()
@@ -300,7 +303,7 @@ class CameraEditor(QDialog):
             return
         folder = find_vlc_directory()
         if folder is None:
-            self.show_error('64비트 VLC를 설치한 뒤 연결을 확인하세요.')
+            self.show_error('재생 파일이 없습니다. CamFloat 압축을 모두 풀고 다시 실행하세요.')
             return
         self.check.setEnabled(False)
         self.check.setText('확인 중…')

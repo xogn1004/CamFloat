@@ -30,7 +30,7 @@ class StorageRegressions(unittest.TestCase):
         raw = dict(cameras=[None, 3, camera], opacity='bad', geometry=['?', 0, 1, 1],
                    slots=[camera['id'], camera['id'], {}, 'missing'])
         config = normalize(raw)
-        self.assertEqual(config['opacity'], 100)
+        self.assertEqual(config['opacity'], 80)
         self.assertEqual(config['cameras'][0]['volume'], 100)
         self.assertEqual(config['slots'], [camera['id'], None, None, None])
         self.assertIsNone(config['geometry'])

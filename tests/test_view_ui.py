@@ -32,7 +32,7 @@ class ViewUI(unittest.TestCase):
                 self.assertFalse(actions[text].icon().isNull())
             app_menu = self.window.build_app_menu()
             app_actions = {action.text().split('\t')[0]: action for action in app_menu.actions()}
-            for text in ('항상 위에 해제', '카메라 관리…', '화면 구성'):
+            for text in ('항상 위에', '카메라 관리…', '화면 구성'):
                 self.assertFalse(app_actions[text].icon().isNull())
                 self.assertNotIn(text, actions)
             app_menu.deleteLater()

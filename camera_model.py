@@ -84,9 +84,19 @@ def new_camera(name='', url=''):
 
 
 def default_config():
-    return dict(version=4, cameras=[], slots=[None] * 4, layout_slots=None, layout=1, split_orientation='horizontal', always_on_top=True,
-                hardware_acceleration=True, master_muted=False, opacity=100, geometry=None,
+    return dict(version=4, cameras=[], slots=[None] * 4, layout_slots=None, layout=1, split_orientation='horizontal', always_on_top=False,
+                hardware_acceleration=True, master_muted=False, opacity=80, geometry=None,
                 verify_connection_info=True)
+
+
+def reset_settings(cameras):
+    """Keep registry identities and connections; reset playback and app settings."""
+    config = default_config()
+    config['cameras'] = copy.deepcopy(cameras)
+    for camera in config['cameras']:
+        camera.update(quality='HD', volume=100, muted=False)
+    fill_empty_slots(config, [c['id'] for c in config['cameras'] if c.get('enabled', True)])
+    return config
 
 
 def camera_display_name(camera):
@@ -156,7 +166,7 @@ def normalize(raw, encrypted=False):
         raise ValueError('설정 형식이 올바르지 않습니다.')
     result = default_config()
     for key in ('always_on_top', 'hardware_acceleration'):
-        result[key] = bool(raw.get(key, True))
+        result[key] = bool(raw.get(key, result[key]))
     result['master_muted'] = bool(raw.get('master_muted', False))
     policy = raw.get('verify_connection_info', False)
     try:
@@ -168,7 +178,7 @@ def normalize(raw, encrypted=False):
     result['layout'] = layout if type(layout) is int and layout in (1, 2, 4) else 1
     orientation = raw.get('split_orientation', 'horizontal')
     result['split_orientation'] = 'vertical' if orientation == 'vertical' else 'horizontal'
-    result['opacity'] = bounded_int(raw.get('opacity'), 100, 20, 100)
+    result['opacity'] = bounded_int(raw.get('opacity'), result['opacity'], 20, 100)
     geometry = raw.get('geometry')
     if isinstance(geometry, list) and len(geometry) == 4:
         try:
@@ -438,6 +448,9 @@ def make_vlc_instance(folder, *options):
     DLL_HANDLES.append(os.add_dll_directory(str(folder)))
     os.environ['PATH'] = str(folder) + os.pathsep + os.environ.get('PATH', '')
     os.environ['VLC_PLUGIN_PATH'] = str(folder / 'plugins')
+    # Pin ctypes to our engine, even when another VLC is installed/registered.
+    os.environ['PYTHON_VLC_LIB_PATH'] = str(folder / 'libvlc.dll')
+    os.environ['PYTHON_VLC_MODULE_PATH'] = str(folder / 'plugins')
     import vlc
     # Follow VLC's default buffer. Forcing 450 ms can repeatedly display the
     # connection-time HEVC image on some cameras while counters still advance.

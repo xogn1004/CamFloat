@@ -10,3 +10,4 @@ sample-test.mp4
 .*-pid
 .*-process-id
 *.log
+vendor/
