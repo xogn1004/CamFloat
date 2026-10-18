@@ -7,6 +7,8 @@ Windows에서 RTSP 카메라를 1·2·4분할로 재생하는 작은 항상 위 
 - 실행: `release/CamFloat/CamFloat.exe`
 - 64비트 VLC media player가 필요합니다. 확인한 환경은 Windows 11 / VLC 3.0.23입니다.
 - 배포할 때는 `_internal`과 `licenses`를 포함한 **CamFloat 폴더 전체**를 복사하세요.
+- 사용자 배포본에는 `CamFloat.exe`, `_internal/`, `licenses/`, `시작하기.txt`만 넣습니다. README·변경 이력·코드 리뷰·QA 및 빌드 보고서는 개발용으로 보관합니다.
+- 배포 ZIP과 체크섬 갱신: `.venv/Scripts/python.exe package_release.py --archive`. 앱을 다시 빌드하지 않고 배포 파일 구성을 정리할 수도 있습니다.
 - 실행 중인 기존 CamFloat를 종료한 후 새 실행 파일을 여세요. 메뉴 하단에서 버전을 확인할 수 있습니다.
 - 카메라 설정은 `%LOCALAPPDATA%/CamFloat/settings.json`에 보관되며 별명·주소·계정은 Windows DPAPI로 암호화합니다. 배포 폴더에 사용자 설정을 넣지 않습니다.
 
