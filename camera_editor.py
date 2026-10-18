@@ -9,7 +9,7 @@ from PySide6.QtWidgets import (QComboBox, QDialog, QDialogButtonBox,
 
 from camera_model import (camera_display_name, camera_url, find_vlc_directory, new_camera,
                           supports_quality, validate_rtsp_url)
-from camera_draft import ConnectionDraft, duplicate_target
+from camera_draft import ConnectionDraft, duplicate_target, split_address_port
 from connection_probe import ConnectionProbe
 from privacy import PrivacyController, SensitiveField
 from icons import icon
@@ -241,6 +241,11 @@ class CameraEditor(QDialog):
                 self.password.text(), self.path.text())
 
     def simple_url(self):
+        host, port = split_address_port(self.host.text(), self.port.value())
+        if host != self.host.text():
+            self.host.setText(host)
+        if port != self.port.value():
+            self.port.setValue(port)
         return self.draft.from_fields(self.simple_fields())
 
     def switch_mode(self, index):
