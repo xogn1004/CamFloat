@@ -52,7 +52,7 @@
 - 내부망 기기 2대 모두 UsernameToken PasswordDigest를 포함한 `GetCapabilities`·`GetProfiles`에 정상 SOAP 응답을 반환했습니다. PTZ 기능과 PTZ 설정이 연결된 영상 프로필 2개를 확인했습니다.
 - 기기가 알려준 PTZ 서비스 경로가 일반적인 경로와 달랐습니다. 도구는 기기가 반환한 경로를 먼저 사용하고, 필요시 일반 PTZ 경로도 사용자가 선택할 수 있게 합니다. 계정 정보 전송은 동일 기기의 확인된 5000번 포트로 제한합니다.
 - `GetNodes`·`GetStatus`·`GetConfigurationOptions`·`Stop` 등은 시험한 요청에서 정상 응답을 확인하지 못했습니다. 연결 종료를 명령 성공으로 취급하지 않습니다. C400G 공개 구현에도 유사한 예외 처리가 있지만 실제 동작은 직접 관찰로 구분합니다.
-- 제조사 앱 통신은 캡처하지 않았습니다. 현재 PC에서 연결된 Android 도구·에뮬레이터 환경도 확인되지 않았습니다. 우선 확인된 ONVIF 경로를 시험합니다.
+- 제조사 앱 통신은 캡처하지 않았습니다. USB로 설치 APK를 확보해 C500GS의 통신 경로를 정적으로 조사했습니다. 실제 동작이 관찰된 제어는 아직 ONVIF 수평 이동뿐입니다.
 
 **수동 ONVIF 시험 결과:** C500GS · 37.0.161 기기 한 대에서 수평 양방향 회전과 실제 멈춤을 사용자 관찰로 확인했습니다. 이동 시험 6회 중 정상 이동 SOAP 응답 5회, “움직이고 멈춤” 4회, 관찰 미확인 1회, “움직임 없음” 1회였습니다. 기기가 반환한 PTZ 경로에서는 4회 모두 정상 이동 응답을 받았고, 3회는 실물 동작 확인·1회는 관찰 미확인이었습니다. 일반 PTZ 경로의 결과는 일관되지 않아 기본값은 기기가 반환한 경로를 사용합니다.
 
@@ -79,9 +79,19 @@
 
 사용 휴대폰은 Android로 확인됐습니다. 우선 USB로 승인된 휴대폰에서 `com.cctv.iptime`의 APK만 읽어 SDK·제어 명령의 단서를 조사합니다. `android-app-check.bat`은 해당 패키지의 `pm path`와 APK `pull`만 수행하며 앱 설치·앱 데이터·계정·사진·다른 앱·logcat 수집을 하지 않습니다. APK는 실행하지 않고 ZIP 데이터로만 읽습니다. SDK 표식이나 단어 발견은 호환성의 증거가 아닌 조사 단서입니다.
 
-공식 Google Platform-Tools 37.0.1의 ADB와 필요한 DLL·고지를 로컬 `%LOCALAPPDATA%/CamFloatQA/android/platform-tools`에 준비했습니다. Google 저장소 메타데이터의 크기·체크섬으로 아카이브를 검증했습니다. 휴대폰이 아직 연결·승인되지 않아 실제 APK는 확보하지 못했습니다. 휴대폰에서 USB 디버깅과 이 PC의 연결을 직접 허용해야 이어갈 수 있습니다. 준비 방법은 [Android 공식 안내](https://developer.android.com/tools/adb#Enabling)를 따릅니다.
+공식 Google Platform-Tools 37.0.1의 ADB와 필요한 DLL·고지를 로컬 `%LOCALAPPDATA%/CamFloatQA/android/platform-tools`에 준비했습니다. Google 저장소 메타데이터의 크기·체크섬으로 아카이브를 검증했습니다. 이후 사용자가 USB 연결을 승인한 휴대폰에서 `base.apk` 한 개(355,123,652바이트)를 확보했습니다. APK가 기존 256 MiB 제한보다 커서 실제 압축 구조를 확인한 뒤 상한을 512 MiB로 조정했습니다. 항목 수·전체 압축 해제 크기·개별 분석 크기의 제한은 유지합니다. 연결 준비 방법은 [Android 공식 안내](https://developer.android.com/tools/adb#Enabling)를 따릅니다.
 
-APK와 분석 결과는 Git에서 제외된 `verification/current/android-app`에만 둡니다. 분석 결과에는 파일 체크섬·라이브러리 이름·고정된 키워드 표식만 남기며 APK에서 읽은 임의의 문자열·주소·키를 보고서에 복사하지 않습니다. 이 단계는 통신 캡처나 카메라 조작을 수행하지 않습니다.
+APK와 분석 결과는 Git에서 제외된 `verification/current/android-app`에만 둡니다. 기본 보고서는 파일 체크섬·라이브러리 이름·고정된 키워드 표식을 기록합니다. 후속 DEX 분석은 실행 없이 함수 식별자·호출 관계·검토한 제어 속성과 수치만 기록하며 임의의 문자열·주소·키는 생략합니다. APK 원본과 제조사 라이브러리는 Git·릴리즈에 포함하지 않습니다. 이번 분석에서는 통신 캡처·앱 실행·카메라 조작·음성 전송을 하지 않았습니다.
+
+#### C500GS APK 분석 결과
+
+원본 APK SHA-256: `65ca4ac1f0cdaafa2a09643398fed37bc239d24b766dd518ea7f6787c64b9536`. DEX 21개와 네이티브 라이브러리를 데이터로 읽었습니다. `assets/appConfig.json`의 C500GS 항목은 `solution`과 `bindSolution`을 모두 `reoqoo`로 지정합니다. 일반 Gwell P2P와 IoTVideo 코드가 함께 있어 다른 기기용 코드와 구분해야 합니다.
+
+- **OFF/ON:** Reoqoo 목록의 `DeviceListFragment.turnOnOrOffDevice` → `PluginManager.deviceEnOn` → `PluginServiceImpl.deviceEnOn` → `DeviceWriteModel.setDeviceCameraOnEn` → `DeviceManager.writePropertyOfDevice` 경로를 확인했습니다. 제어 속성은 `ProWritable.cameraOnEn.setVal`이며 IoTVideo 메시지 관리자로 전달됩니다. 다른 코드에서 발견한 `Action.cameraOn.stVal`을 이 경로와 혼동하지 않습니다. 속성 이름만으로 전원·마이크·스트리밍 차단을 보장하지 않습니다.
+- **저장 위치:** 해당 플러그인에 `DeviceWriteModel.setDevicePreset` → `IIotWriteModelApi.writeDevicePreset` 경로가 있습니다. 위치 조회·이동·생성·삭제의 실제 메시지와 기기 응답은 아직 검증하지 않았습니다. 기존 ONVIF 프리셋 조회 실패를 해결한 것은 아닙니다.
+- **말하기:** Reoqoo의 `GwIotLiveIntercom`은 IoTVideo `IIntercom.startIntercom`과 `endIntercom`을 사용합니다. 초기 설정은 AMR·8 kHz·160샘플 프레임·모노이며, 입력 비트 폭은 16입니다. 네이티브 통로는 `libiotvideomulti.so`의 JNI로 이어집니다. 앞서 시험한 RTSP 확장 PCM 후보와 같은 전송 방식이라고 볼 근거가 없습니다. 이 발견은 이전 테스트음의 미검출 원인을 확정하거나 실제 스피커 재생을 증명하지 않습니다.
+
+정적 호출 경로와 모델 설정은 확보했지만 현재 펌웨어에서 실제 선택되는 분기·세션 인증·전송 패킷·복원 동작은 남아 있습니다. Android 라이브러리를 Windows EXE에 그대로 넣을 수는 없습니다. 다음 단계는 해당 모델의 SDK·프로토콜과 실제 명령·응답을 대조하는 것입니다. 앱 내부 계정 데이터나 키를 추출하지 않았고, 휴대폰에 캡처 앱·인증서·VPN을 설치하거나 설정하지 않았습니다.
 
 ### 말하기 전송 경로 조사
 

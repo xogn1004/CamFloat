@@ -14,11 +14,14 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = 'com.cctv.iptime'
+MAX_APK_BYTES = 512 * 1024 * 1024
 SDK_MARKERS = {
     'ThroughTek_TUTK_candidate': (b'iotc_initialize', b'avsendioctrl', b'avclientstart', b'libiotcapis', b'libavapis'),
     'PPCS_candidate': (b'ppcs_initialize', b'ppcs_connect', b'libppcs'),
     'HiChip_candidate': (b'hichip', b'hichip_p2p'),
     'ONVIF_candidate': (b'getcapabilities', b'continuousmove', b'getpresets'),
+    'Gwell_P2P_candidate': (b'libgwmediaplayer', b'gwvideoplayernative', b'gwmsgmgrnative'),
+    'Gwell_IoTVideo_candidate': (b'libiotvideomulti', b'com/jwkj/iotvideo', b'com.gw_reoqoo'),
 }
 CONTROL_MARKERS = ('preset', 'privacy', 'ptz', 'talk', 'sleep')
 
@@ -53,13 +56,14 @@ def apk_paths(output):
 
 
 def inspect_apk(path):
+    size = path.stat().st_size
+    if size > MAX_APK_BYTES:
+        raise InvestigationError('앱 파일이 분석 크기 제한을 초과했습니다.')
     with path.open('rb') as stream:
         checksum = hashlib.file_digest(stream, 'sha256').hexdigest()
-    report = dict(file=path.name, bytes=path.stat().st_size, sha256=checksum,
+    report = dict(file=path.name, bytes=size, sha256=checksum,
                   native_libraries=[], sdk_markers={name: False for name in SDK_MARKERS},
                   control_word_occurrences={name: 0 for name in CONTROL_MARKERS})
-    if report['bytes'] > 256 * 1024 * 1024:
-        raise InvestigationError('앱 파일이 분석 크기 제한을 초과했습니다.')
     with zipfile.ZipFile(path) as archive:
         entries = archive.infolist()
         if len(entries) > 30000 or sum(e.file_size for e in entries) > 768 * 1024 * 1024:

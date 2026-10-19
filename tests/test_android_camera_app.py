@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import subprocess
 import tempfile
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 import zipfile
@@ -40,6 +41,32 @@ class AndroidCameraAppTests(unittest.TestCase):
             self.assertEqual(report['native_libraries'], ['lib/arm64-v8a/libAVAPIs.so'])
             self.assertNotIn('SHOULD_NOT_PRINT_SECRET', json.dumps(report))
             self.assertEqual(sorted(p.name for p in Path(folder).iterdir()), ['base.apk'])
+
+    def test_large_installed_app_fits_bounded_limit(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'base.apk'
+            apk(path)
+            # Exercise the observed APK size without allocating a large fixture.
+            with patch.object(Path, 'stat', return_value=SimpleNamespace(st_size=355123652)):
+                report = tool.inspect_apk(path)
+            self.assertEqual(report['bytes'], 355123652)
+
+    def test_oversized_apk_rejected_before_hashing(self):
+        with patch.object(Path, 'stat', return_value=SimpleNamespace(st_size=tool.MAX_APK_BYTES + 1)), \
+                patch.object(Path, 'open') as opened:
+            with self.assertRaises(tool.InvestigationError):
+                tool.inspect_apk(Path('oversized.apk'))
+            opened.assert_not_called()
+
+    def test_additional_sdk_hints_do_not_imply_device_support(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'base.apk'
+            with zipfile.ZipFile(path, 'w') as archive:
+                archive.writestr('classes.dex', b'Lcom/jwkj/iotvideo/message/MessageMgr; GwVideoPlayerNative')
+            report = tool.inspect_apk(path)
+            self.assertTrue(report['sdk_markers']['Gwell_P2P_candidate'])
+            self.assertTrue(report['sdk_markers']['Gwell_IoTVideo_candidate'])
+            self.assertFalse(report['sdk_markers']['ThroughTek_TUTK_candidate'])
 
     def test_unauthorized_usb_does_not_collect_any_files(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(tool, 'adb_run',

@@ -73,6 +73,8 @@ cd CamFloat
 
 Android 제조사 앱 조사 도구는 `android-app-check.bat`입니다. 공식 [Platform-Tools](https://developer.android.com/tools/releases/platform-tools)의 ADB·DLL을 `%LOCALAPPDATA%/CamFloatQA/android/platform-tools`에 준비하고, 휴대폰에서 USB 디버깅·PC 연결을 허용해야 합니다. 도구는 USB 기기 하나만 대상으로 `com.cctv.iptime` APK만 읽습니다. APK와 결과는 `verification/current/android-app`에 보관하고 실행·배포하지 않습니다. `check.bat android`는 가상 ADB와 합성 APK만 사용합니다.
 
+APK 분석 상한은 파일당 512 MiB·ZIP 항목 30,000개·전체 원본 크기 768 MiB입니다. 개별 DEX·라이브러리는 64 MiB까지만 읽습니다. 실제 USB 기기에서 약 339 MiB APK 수집을 확인했으며, SDK 표식은 기기 호환성의 확정 판정에 사용하지 않습니다. 수집 이후에는 휴대폰을 분리해도 로컬 파일로 분석을 계속할 수 있습니다.
+
 ### 릴리즈 전체 검사
 
 ```powershell
