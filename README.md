@@ -5,7 +5,7 @@ RTSP 카메라를 **작고 깔끔한 창으로** 보는 Windows용 무료 플레
 
 **[다운로드](https://github.com/xogn1004/CamFloat/releases/latest)** · [사용 안내](docs/user-guide.md) · [변경 내역](CHANGELOG.md)
 
-공개 버전은 **1.0.0**입니다. **1.1.0은 최종 확인 중**이며 아직 공개되지 않았습니다.
+최신 버전은 **1.1.0**입니다.
 
 ## 주요 기능
 
