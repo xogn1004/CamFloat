@@ -1,17 +1,28 @@
-from PIL import Image, ImageDraw
+from pathlib import Path
+import argparse
+
+from PIL import Image
 
 
 def main() -> None:
-    size = 256
-    image = Image.new("RGBA", (size, size), (18, 23, 32, 255))
-    draw = ImageDraw.Draw(image)
-    draw.rounded_rectangle((18, 18, 238, 238), radius=48, fill=(30, 39, 53, 255))
-    draw.rounded_rectangle((39, 68, 217, 188), radius=20, fill=(8, 12, 17, 255))
-    draw.ellipse((83, 78, 173, 168), fill=(75, 146, 239, 255))
-    draw.ellipse((98, 93, 158, 153), fill=(11, 17, 25, 255))
-    draw.ellipse((112, 107, 144, 139), fill=(113, 177, 255, 255))
-    draw.rounded_rectangle((184, 86, 202, 104), radius=7, fill=(255, 94, 94, 255))
-    image.save("camfloat.ico", format="ICO", sizes=[(16, 16), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+    parser = argparse.ArgumentParser(description='Create the app icon without replacing a supplied ICO.')
+    parser.add_argument('--force', action='store_true', help='Regenerate camfloat.ico from camfloat.png')
+    args = parser.parse_args()
+    project_dir = Path(__file__).resolve().parent
+    source = project_dir / "camfloat.png"
+    output = project_dir / "camfloat.ico"
+    if output.exists() and not args.force:
+        with Image.open(output) as image:
+            if image.format != 'ICO':
+                raise ValueError('camfloat.ico is not a valid ICO file')
+            image.load()
+        return
+    with Image.open(source) as image:
+        image.convert("RGBA").save(
+            output,
+            format="ICO",
+            sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)],
+        )
 
 
 if __name__ == "__main__":

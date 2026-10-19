@@ -45,7 +45,7 @@ def history_check():
             if kind not in (b'blob', b'commit', b'tag'):
                 continue
             if kind == b'blob' and b'\0' in data:
-                if not (path.endswith('.ico') or
+                if not (path.endswith('.ico') or path == 'camfloat.png' or
                         (path.startswith('docs/images/') and path.endswith('.png'))):
                     findings.append(dict(object=oid[:12], path=path, reason='unreviewed-binary'))
                 continue

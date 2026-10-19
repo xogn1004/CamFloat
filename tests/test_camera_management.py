@@ -2,6 +2,7 @@
 import ctypes
 import ipaddress
 import threading
+from types import SimpleNamespace
 import sys
 import unittest
 from ctypes import wintypes
@@ -9,7 +10,7 @@ from unittest.mock import patch
 
 from PySide6.QtCore import QEvent, QObject, QTimer, Signal, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton
+from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton, QWidget
 
 import test_app as fixtures
 from camera_model import new_camera
@@ -175,6 +176,36 @@ class ManagementEntry(unittest.TestCase):
                 camera = manager.cameras[0]
                 manager.done(QDialog.DialogCode.Rejected)
                 manager.deleteLater()
+
+    def test_supported_registry_lookup_once_per_run_even_without_saving_draft(self):
+        camera = dict(self.camera, url=f'rtsp://user:synthetic@{str(ipaddress.IPv4Address(0x0a000007))}/onvif1')
+        host = QWidget()
+        host.direction_control = SimpleNamespace(manager_checked=set(), cache={})
+        FakeClient.gate = None
+        with patch('ptz_control.Client', FakeClient), patch.object(FakeClient, 'discover', return_value={'profile_verified': True}) as query:
+            for expected in (1, 1):
+                manager = CameraManager([camera], host)
+                manager.show()
+                for _ in range(100):
+                    self.app.processEvents()
+                    if manager.model.data(manager.model.index(0, 3)) == '지원':
+                        break
+                    QTest.qWait(10)
+                self.assertEqual(manager.model.data(manager.model.index(0, 3)), '지원')
+                self.assertEqual(query.call_count, expected)
+                manager.done(QDialog.DialogCode.Rejected)
+                manager.deleteLater()
+            # A fresh application host must query saved supported cameras again.
+            host.direction_control = SimpleNamespace(manager_checked=set(), cache={})
+            supported = dict(camera, ptz=dict(defaults(camera), checked=True, source='device', lookup_result='supported'))
+            manager = CameraManager([supported], host)
+            manager.show()
+            self.assertTrue(manager.support_control.lookup_done.wait(1))
+            self.app.processEvents()
+            self.assertEqual(query.call_count, 2)
+            manager.done(QDialog.DialogCode.Rejected)
+            manager.deleteLater()
+        host.deleteLater()
 
     def test_empty_and_partial_url_can_return_to_simple_without_loss(self):
         editor = CameraEditor()

@@ -75,6 +75,9 @@ class DirectionControl(QObject):
         self.lookup_done = threading.Event()
         self.lookup_done.set()
         self.cache = {}
+        # Successful registry lookups in this application run only. This is
+        # deliberately not persisted, so the next launch checks DDNS anew.
+        self.manager_checked = set()
         self.lookups = {}
         self.active_lookup = None
         self.last_reply = None

@@ -1,7 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
-from pathlib import Path
-
-build_icon = 'camfloat-c500gs.ico' if (Path(SPECPATH) / 'camfloat-c500gs.ico').is_file() else 'camfloat.ico'
+build_icon = 'camfloat.ico'
 
 
 a = Analysis(

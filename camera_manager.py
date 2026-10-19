@@ -80,6 +80,15 @@ class CameraManager(QDialog):
         self.tips = HoverTips(self)
         self.settings_reset = False
         self.cameras = copy.deepcopy(cameras)
+        host_control = getattr(parent, 'direction_control', None)
+        self._support_session = host_control.manager_checked if host_control is not None else set()
+        if host_control is not None:
+            for camera in self.cameras:
+                key = camera_key(camera)
+                if key in self._support_session:
+                    checked = validated_control(host_control.cache.get(key), camera)
+                    if checked:
+                        camera['ptz'] = checked
         self.support_control = DirectionControl(self, diagnostics_enabled=False)
         self.support_control.metadata_ready.connect(self.store_direction_support)
         self.support_control.lookup_changed.connect(self.refresh_direction_support)
@@ -306,7 +315,8 @@ class CameraManager(QDialog):
             return
         for camera in self.cameras:
             key = camera_key(camera)
-            if eligible(camera) and key not in self._support_requested:
+            if (eligible(camera) and key not in self._support_requested
+                    and not (key in self._support_session and support_state(camera) == 'supported')):
                 self._support_requested.add(key)
                 self.support_control.discover(camera, force=True)
 
@@ -321,6 +331,13 @@ class CameraManager(QDialog):
             checked = validated_control(info, camera)
             if checked:
                 camera['ptz'] = checked
+                if checked.get('lookup_result') == 'supported':
+                    self._support_session.add(key)
+                    host_control = getattr(self.parent(), 'direction_control', None)
+                    if host_control is not None:
+                        host_control.cache[key] = checked
+                else:
+                    self._support_session.discard(key)
                 self.refresh_direction_support()
 
     def selected_camera(self):
