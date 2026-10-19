@@ -58,7 +58,7 @@ foreach ($cleanupRelative in @('build', 'build_fixed', 'build_release', 'build_v
     'verification\current\release\superseded-portable', 'verification\current\release\final portable',
     'verification\current\release\final-packaged-profile', 'verification\current\release\final-targeted-profile',
     'verification\current\release\final-network-profile', 'verification\current\release\final-initial-profile',
-    'verification\current\release\final-visual-profile')) {
+    'verification\current\release\final-visual-profile', 'verification\current\release\icon-copy-profile')) {
     Remove-CamFloatIntermediate $cleanupRelative
 }
 foreach ($cleanupOld in @('batch-tests.log', 'preview.png', 'preview-menu.png', 'design-test.mp4')) {
