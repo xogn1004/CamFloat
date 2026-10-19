@@ -1,6 +1,6 @@
 # 개발 안내
 
-현재 개발 버전은 **1.0.1-dev.1**, 공개 배포본은 **1.0.0**입니다.
+현재 개발 버전은 **1.0.1-dev.2**, 공개 배포본은 **1.0.0**입니다.
 
 ## 환경과 빌드
 
@@ -27,7 +27,7 @@ cd CamFloat
 
 | 파일 | 역할 |
 | --- | --- |
-| `onvif_control.py`, `ptz_control.py`, `direction_popup.py` | ONVIF 방향 조작·비동기 작업·스크린별 방향 패널 |
+| `onvif_control.py`, `ptz_control.py`, `ptz_metadata.py`, `direction_popup.py` | 방향 조작·등록 시 제어 정보 조회/암호화 보관·길게 누르기 |
 | `main.py`, `playback.py` | 화면 배정·확대·전체화면과 비동기 재생 작업 |
 | `chrome.py`, `native_window.py` | 상단 도구와 Windows 창·오버레이 처리 |
 | `camera_manager.py`, `camera_editor.py`, `camera_draft.py` | 관리 초안·최종 저장과 연결 정보 입력·검증 |
@@ -122,7 +122,7 @@ APK 분석 상한은 파일당 512 MiB·ZIP 항목 30,000개·전체 원본 크�
 | 단계 | 예시 |
 | --- | --- |
 | 정식 공개 | `1.0.0` |
-| 다음 버전 개발 | `1.0.1-dev.1` |
+| 다음 버전 개발 | `1.0.1-dev.2` |
 | 공개 직전 후보 | `1.0.1-rc.1` |
 
 같은 단계의 수정은 뒤 번호를 올립니다. 공개할 때는 접미사를 제거하고 `main.py`·`version_info.txt`·태그·배포 파일을 맞춥니다. 공개일은 `CHANGELOG.md`에서만 관리합니다.

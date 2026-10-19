@@ -60,10 +60,11 @@ class ONVIFTrialTests(unittest.TestCase):
         self.assertEqual(root.find('.//{' + trial.PTZ + '}ProfileToken').text, 'profile-token')
         self.assertIsNone(root.find('.//{' + trial.PTZ + '}SetPreset'))
 
-    def test_service_address_must_stay_on_same_device_and_known_port(self):
+    def test_service_address_must_stay_on_same_device(self):
         self.assertEqual(trial.service_path('http://127.0.0.1:5000/onvif/deviceio_service', '127.0.0.1'), '/onvif/deviceio_service')
-        for url in ('http://example.com:5000/onvif/ptz', 'http://127.0.0.1:80/onvif/ptz',
-                    'http://u:p@127.0.0.1:5000/onvif/ptz', 'http://127.0.0.1:5000/other',
+        self.assertEqual(trial.service_path('http://127.0.0.1:8080/custom/ptz', '127.0.0.1'), '/custom/ptz')
+        for url in ('http://example.com:5000/onvif/ptz', 'http://127.0.0.1:5000//other',
+                    'http://u:p@127.0.0.1:5000/onvif/ptz', 'http://127.0.0.1:5000',
                     'http://127.0.0.1:5000/onvif/ptz?data=secret'):
             with self.assertRaises(ValueError):
                 trial.service_path(url, '127.0.0.1')
@@ -81,6 +82,28 @@ class ONVIFTrialTests(unittest.TestCase):
         result, _ = trial.Client(self.camera, Connection).call('/onvif/device_service', trial.DEVICE, 'GetCapabilities')
         self.assertTrue(result['request_sent'])
         self.assertFalse(result['response_verified'])
+
+    def test_app_step_has_timeout_and_never_sends_stop_or_discovery(self):
+        calls = []
+        class Response:
+            status = 200
+            def read(self, size):
+                return f'<s:Envelope xmlns:s="{trial.SOAP}"><s:Body><p:ContinuousMoveResponse xmlns:p="{trial.PTZ}"/></s:Body></s:Envelope>'.encode()
+        class Connection:
+            def __init__(self, host, port, timeout): calls.append(('connection', port, timeout))
+            def request(self, method, path, body, headers): calls.append(('request', path, body))
+            def getresponse(self): return Response()
+            def close(self): pass
+        client = trial.Client(self.camera, Connection)
+        client.ptz_path, client.ptz_port, client.profile_token = '/custom/ptz', 8080, 'profile'
+        result = client.step(0, 1)
+        self.assertTrue(result['response_verified'])
+        self.assertEqual(calls[0], ('connection', 8080, .15))
+        requests = [c for c in calls if c[0] == 'request']
+        self.assertEqual(len(requests), 1)
+        root = ET.fromstring(requests[0][2])
+        self.assertEqual(root.find('.//{' + trial.PTZ + '}Timeout').text, 'PT0.25S')
+        self.assertIsNone(root.find('.//{' + trial.PTZ + '}Stop'))
 
     def test_disconnect_is_unconfirmed_and_does_not_expose_credentials(self):
         class Connection:

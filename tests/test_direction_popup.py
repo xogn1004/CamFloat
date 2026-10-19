@@ -102,6 +102,45 @@ class DirectionPopupTests(unittest.TestCase):
         self.assertFalse(any('ptz' in k or 'direction' in k for k in self.window.config))
         menu.deleteLater()
 
+    def test_press_sends_before_release_and_hold_stops_on_release(self):
+        panel = self.open_panel()
+        button = panel.buttons['left']
+        QTest.mousePress(button, Qt.MouseButton.LeftButton)
+        QTest.qWait(40)
+        self.assertTrue(any(x[0] == 'ContinuousMove' for x in FakeClient.calls))
+        QTest.qWait(400)
+        QTest.mouseRelease(button, Qt.MouseButton.LeftButton)
+        QTest.qWait(50)
+        count = len(FakeClient.calls)
+        self.assertGreaterEqual(count, 2)
+        QTest.qWait(350)
+        self.assertEqual(len(FakeClient.calls), count)
+        self.assertFalse(panel.hold_timer.isActive())
+        self.assertFalse(any(x[0] == 'Stop' for x in FakeClient.calls))
+
+    def test_hold_is_cancelled_on_app_change(self):
+        panel = self.open_panel()
+        QTest.mousePress(panel.buttons['up'], Qt.MouseButton.LeftButton)
+        QTest.qWait(190)
+        self.window.application_state_changed(Qt.ApplicationState.ApplicationInactive)
+        self.assertFalse(panel.hold_timer.isActive())
+        QTest.qWait(30)
+        count = len(FakeClient.calls)
+        QTest.qWait(350)
+        self.assertEqual(len(FakeClient.calls), count)
+
+    def test_registration_commit_queries_new_connection_only(self):
+        with patch.object(self.window.direction_control, 'discover') as query:
+            cameras = [dict(c) for c in self.window.config['cameras']]
+            cameras[0]['url'] += '?updated'
+            maps = self.window.config['layout_slots']
+            self.assertTrue(self.window.commit_camera_draft(cameras, maps, True))
+            self.assertEqual(query.call_count, 1)
+            self.assertEqual(query.call_args.args[0]['id'], cameras[0]['id'])
+            query.reset_mock()
+            self.assertTrue(self.window.commit_camera_draft(cameras, maps, True))
+            query.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

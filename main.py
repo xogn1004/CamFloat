@@ -31,9 +31,10 @@ from menu_labels import (CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, men
 from volume_popup import VolumePopup
 from hover_tips import HoverTips
 from ptz_control import DirectionControl
+from ptz_metadata import validated as validated_control, binding as control_binding
 from direction_popup import DirectionPopup
 
-VERSION = '1.0.1-dev.1'
+VERSION = '1.0.1-dev.2'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -559,6 +560,7 @@ class PlayerWindow(QWidget):
         self.save_error_reported = False
         self.tiles = []
         self.direction_control = DirectionControl(self)
+        self.direction_control.metadata_ready.connect(self.store_control_metadata)
         self.setWindowTitle(APP_TITLE + (
             f' · {PROFILES[self.playback_profile]}' if self.playback_profile != 'auto' else ''))
         self.setWindowIcon(app_icon())
@@ -840,7 +842,8 @@ class PlayerWindow(QWidget):
             self.chrome.close()
             for tile in self.tiles:
                 tile.release()
-        if not all(tile.worker.done.is_set() for tile in self.tiles) or not self.direction_control.done.is_set():
+        if (not all(tile.worker.done.is_set() for tile in self.tiles)
+                or not self.direction_control.done.is_set() or not self.direction_control.lookup_done.is_set()):
             event.ignore()
             self.hide()
             QTimer.singleShot(50, self.close)
@@ -1037,12 +1040,15 @@ class PlayerWindow(QWidget):
             dialog.deleteLater()
 
     def commit_camera_draft(self, cameras, layout_slots, verify_connection_info, *, reset=False):
+        previous_connections = {c['id']: control_binding(c) for c in self.config['cameras']}
         candidate = copy.deepcopy(self.config)
         if reset:
             from camera_model import reset_settings
             candidate = reset_settings(cameras)
         candidate.update(cameras=copy.deepcopy(cameras), layout_slots=copy.deepcopy(layout_slots),
                          verify_connection_info=bool(verify_connection_info))
+        for camera in candidate['cameras']:
+            camera['ptz'] = validated_control(camera.get('ptz'), camera)
         ensure_layout_slots(candidate)
         try:
             if self.persist_enabled:
@@ -1062,7 +1068,20 @@ class PlayerWindow(QWidget):
             self.set_always_on_top(candidate['always_on_top'])
             self.apply_opacity()
         self.refresh_layout()
+        for camera in self.config['cameras']:
+            if previous_connections.get(camera['id']) != control_binding(camera):
+                self.direction_control.discover(camera)
         return True
+
+    def store_control_metadata(self, key, hints):
+        if self.closing:
+            return
+        camera = next((c for c in self.config['cameras'] if (c['id'], c['url']) == key), None)
+        if camera is not None:
+            checked = validated_control(hints, camera)
+            if checked and checked != camera.get('ptz'):
+                camera['ptz'] = checked
+                self.queue_save()
 
     def apply_camera_registry(self, cameras, assigned_slots=None, layout_slots=None):
         previous = {c['id']: c.get('enabled', True) for c in self.config['cameras']}

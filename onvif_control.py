@@ -75,12 +75,18 @@ def envelope(parts, namespace, operation, profile_token=None, pan=None, tilt=0):
 
 
 def service_path(url, host):
+    return service_endpoint(url, host)[0]
+
+
+def service_endpoint(url, host):
     parts = urlsplit(url or '')
-    if (parts.scheme != 'http' or parts.hostname != host or (parts.port or 80) != 5000
+    port = parts.port or 80
+    if (parts.scheme != 'http' or parts.hostname != host or not 1 <= port <= 65535
             or parts.username or parts.password or parts.query or parts.fragment
-            or not parts.path.startswith('/onvif/') or any(c in parts.path for c in '\r\n')):
+            or not parts.path.startswith('/') or parts.path.startswith('//')
+            or any(ord(c) <= 32 or c == '\\' for c in parts.path)):
         raise ValueError('Untrusted service address')
-    return parts.path
+    return parts.path, port
 
 
 class Client:
@@ -89,10 +95,11 @@ class Client:
         self.connection_factory = connection_factory
         self.profile_token = None
         self.ptz_path = None
+        self.ptz_port = 5000
 
-    def call(self, path, namespace, operation, pan=None, on_sent=None, tilt=0):
+    def call(self, path, namespace, operation, pan=None, on_sent=None, tilt=0, port=None, timeout=1):
         body = envelope(self.parts, namespace, operation, self.profile_token, pan, tilt)
-        connection = self.connection_factory(self.parts.hostname, 5000, timeout=1)
+        connection = self.connection_factory(self.parts.hostname, port or (self.ptz_port if namespace == PTZ else 5000), timeout=timeout)
         result = {'operation': operation, 'response_verified': False, 'request_sent': False}
         root = None
         action = namespace + '/' + operation
@@ -136,12 +143,12 @@ class Client:
             if local(node) in ('Media', 'PTZ'):
                 addr = next((n.text for n in node if local(n) == 'XAddr'), None)
                 if addr:
-                    services[local(node)] = service_path(addr, self.parts.hostname)
+                    services[local(node)] = service_endpoint(addr, self.parts.hostname)
         if 'PTZ' not in services or 'Media' not in services:
             return report
-        self.ptz_path = services['PTZ']
-        for path in dict.fromkeys([services['Media'], '/onvif/media_service']):
-            result, profiles = self.call(path, MEDIA, 'GetProfiles')
+        self.ptz_path, self.ptz_port = services['PTZ']
+        for path, port in dict.fromkeys([services['Media'], ('/onvif/media_service', 5000)]):
+            result, profiles = self.call(path, MEDIA, 'GetProfiles', port=port)
             if not result['response_verified']:
                 continue
             for profile in profiles.iter('{' + MEDIA + '}Profiles'):
@@ -157,6 +164,12 @@ class Client:
         if not self.ptz_path or not self.profile_token:
             raise ValueError('Discovery required')
         return self.call(self.ptz_path, PTZ, operation, pan, on_sent, tilt=tilt)[0]
+
+    def step(self, pan, tilt=0):
+        """App motion: device timeout only; never wait for or send a Stop."""
+        if not self.ptz_path or not self.profile_token or not direction_valid(pan, tilt):
+            raise ValueError('Control metadata required')
+        return self.call(self.ptz_path, PTZ, 'ContinuousMove', pan=pan, tilt=tilt, timeout=.15)[0]
 
 
 def pulse(client, pan, tilt=0, cancelled=None):

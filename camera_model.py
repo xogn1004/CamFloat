@@ -81,7 +81,7 @@ def crypt(value, decrypt=False):
 
 
 def new_camera(name='', url=''):
-    return dict(id=uuid.uuid4().hex, number=None, enabled=True, name=name, url=url, sd_url='', quality='HD', volume=100, muted=False)
+    return dict(id=uuid.uuid4().hex, number=None, enabled=True, name=name, url=url, sd_url='', quality='HD', volume=100, muted=False, ptz=None)
 
 
 def default_config():
@@ -231,6 +231,16 @@ def normalize(raw, encrypted=False):
             camera['quality'] = 'HD'
         camera['volume'] = bounded_int(camera['volume'], 100, 0, 100)
         camera['muted'] = bool(camera['muted'])
+        from ptz_metadata import validated
+        try:
+            hints = camera.get('ptz')
+            if encrypted and isinstance(hints, str):
+                if len(hints) > 8192:
+                    raise ValueError('Invalid control cache')
+                hints = json.loads(crypt(hints, decrypt=True))
+            camera['ptz'] = validated(hints, camera)
+        except (OSError, ValueError, TypeError, UnicodeError):
+            camera['ptz'] = None  # Corrupt control cache must not block playback.
         result['cameras'].append(camera)
     ids = [c['id'] for c in result['cameras']]
     slots = raw.get('slots', ids[:4])
@@ -270,6 +280,9 @@ def encrypt_document(document, plaintext=False):
                 value = camera.get(key)
                 if isinstance(value, str) and value and ((plaintext and not locked) or not value.startswith('dpapi:')):
                     camera[key] = crypt(value)
+            hints = camera.get('ptz')
+            if isinstance(hints, dict):
+                camera['ptz'] = crypt(json.dumps(hints, ensure_ascii=False))
     policy = protected.get('verify_connection_info')
     if isinstance(policy, bool):
         protected['verify_connection_info'] = crypt('yes' if policy else 'no')

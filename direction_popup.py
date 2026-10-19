@@ -1,5 +1,5 @@
 """A child panel inside the input overlay; no additional native tool window."""
-from PySide6.QtCore import QEvent, QPoint, QSize, Qt
+from PySide6.QtCore import QEvent, QPoint, QSize, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QLabel, QToolButton
 
 from icons import icon
@@ -12,6 +12,10 @@ class DirectionPopup(QFrame):
         self.overlay = overlay
         self.target = None
         self.compact = True
+        self.held_direction = None
+        self.hold_timer = QTimer(self)
+        self.hold_timer.setInterval(160)
+        self.hold_timer.timeout.connect(self.repeat_move)
         self.setObjectName('directionPopup')
         self.setStyleSheet('QFrame#directionPopup{background:rgba(19,24,33,248);'
             'border:1px solid #405069;border-radius:9px;}'
@@ -31,7 +35,8 @@ class DirectionPopup(QFrame):
             button.setAccessibleName(text)
             button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
             button.setAutoRepeat(False)
-            button.clicked.connect(lambda checked=False, x=pan, y=tilt: self.move_camera(x, y))
+            button.pressed.connect(lambda x=pan, y=tilt: self.start_move(x, y))
+            button.released.connect(self.end_move)
             button.installEventFilter(self)
             overlay.tips.add(button)
             self.buttons[name] = button
@@ -61,6 +66,7 @@ class DirectionPopup(QFrame):
         self.raise_()
 
     def close_panel(self):
+        self.end_move()
         if self.target is None:
             return
         owned = self.control().target == self.target
@@ -92,10 +98,12 @@ class DirectionPopup(QFrame):
                    'move_error': '이동 응답을\n확인하지 못했습니다',
                    'local_only': '내부망 카메라에서\n사용할 수 있습니다'}.get(state, '')
         self.status.setText(message)
+        if message:
+            self.end_move()
         self.status.setVisible(bool(message))
         for button in self.buttons.values():
             button.setVisible(not message)
-            button.setEnabled(state == 'ready' and not control.busy)
+            button.setEnabled(state in ('ready', 'moving'))
         self.arrange()
 
     def arrange(self):
@@ -123,12 +131,35 @@ class DirectionPopup(QFrame):
             self.control().move(camera, pan, tilt)
             self.overlay.idle_timer.start()
 
+    def start_move(self, pan, tilt):
+        self.end_move()
+        self.held_direction = (pan, tilt)
+        self.move_camera(pan, tilt)
+        if self.held_direction is not None and self.isVisible():
+            self.hold_timer.start()
+
+    def repeat_move(self):
+        if self.held_direction is None or not self.isVisible():
+            self.end_move()
+            return
+        self.move_camera(*self.held_direction)
+
+    def end_move(self):
+        self.hold_timer.stop()
+        self.held_direction = None
+
     def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.Leave, QEvent.Type.Hide, QEvent.Type.UngrabMouse):
+            self.end_move()
         if event.type() == QEvent.Type.MouseButtonPress:
             self.overlay.activation_press = False
             self.overlay.host.last_double = None
             self.overlay.host.select_slot(self.overlay.index)
         return super().eventFilter(watched, event)
+
+    def hideEvent(self, event):
+        self.end_move()
+        super().hideEvent(event)
 
     def mousePressEvent(self, event):
         event.accept()

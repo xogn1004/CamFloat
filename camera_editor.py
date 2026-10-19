@@ -280,6 +280,8 @@ class CameraEditor(QDialog):
             path, separator, query = sd_url.partition('?')
             sd_url = urlunsplit((base.scheme, base.netloc, path, query if separator else '', ''))
         result.update(url=url, sd_url=sd_url, quality=self.quality.currentText())
+        from ptz_metadata import validated
+        result['ptz'] = validated(result.get('ptz'), result)
         if result['sd_url']:
             validate_rtsp_url(result['sd_url'])
         if result['quality'] == 'SD' and not supports_quality(result):
