@@ -54,7 +54,7 @@ class DispatchTests(unittest.TestCase):
             QTest.qWait(10)
         self.fail('Asynchronous condition was not reached')
 
-    def advance(self, seconds=.5):
+    def advance(self, seconds=.6):
         self.now += seconds
         self.control.dispatch_pending()
         self.pump(lambda: not self.control.busy)
@@ -73,11 +73,11 @@ class DispatchTests(unittest.TestCase):
         self.advance()
         self.assertEqual(len(FakeClient.calls), 6)
 
-    def test_500ms_boundary_and_no_catchup_burst(self):
+    def test_600ms_boundary_and_no_catchup_burst(self):
         self.control.move(self.camera, -1, 0)
         self.pump(lambda: not self.control.busy)
         for _ in range(3): self.control.move(self.camera, -1, 0)
-        self.now += .499
+        self.now += .599
         self.control.dispatch_pending()
         self.assertEqual(len(FakeClient.calls), 1)
         self.now += .002
@@ -89,7 +89,7 @@ class DispatchTests(unittest.TestCase):
         self.control.dispatch_pending()
         self.assertEqual(len(FakeClient.calls), 3)
 
-    def test_hold_waits_for_queue_then_continues_at_500ms(self):
+    def test_hold_waits_for_queue_then_continues_at_600ms(self):
         self.control.move(self.camera, 1, 0)
         self.pump(lambda: not self.control.busy)
         for _ in range(2): self.control.move(self.camera, 1, 0)
@@ -146,7 +146,7 @@ class DispatchTests(unittest.TestCase):
         with patch.object(FakeClient, 'step', delayed):
             self.control.move(self.camera, 1, 0)
             self.pump(lambda: len(entered) == 1)
-            self.now += .5
+            self.now += .6
             self.control.move(self.camera, 1, 0, repeat=True)
             self.pump(lambda: len(entered) == 2)
             self.control.end_input()
@@ -166,9 +166,9 @@ class DispatchTests(unittest.TestCase):
             for expected in range(1, 5):
                 self.pump(lambda: len(entered) == expected)
                 if expected < 4:
-                    self.now += .5
+                    self.now += .6
                     self.control.move(self.camera, 1, 0, repeat=True)
-            self.now += .5
+            self.now += .6
             self.assertTrue(self.control.move(self.camera, 1, 0))
             self.assertEqual(len(entered), 4)
             self.assertEqual(len(self.control.pending), 1)
@@ -234,7 +234,7 @@ class DispatchTests(unittest.TestCase):
             self.assertEqual(writes, [1])
             gate.clear()
             self.control.begin_input()
-            self.now += .5
+            self.now += .6
             self.control.move(self.camera, 1, 0, repeat=True)
             self.pump(lambda: len(entered) == 2)
             self.control.end_input()

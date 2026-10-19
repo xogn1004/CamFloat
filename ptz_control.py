@@ -250,7 +250,7 @@ class DirectionControl(QObject):
         if repeat and (not self.input_open or self.input_cancelled.is_set()):
             self.repeat_request = None
             return
-        remaining = .5 - (self.clock() - self.last_dispatch.get(self.target, float('-inf')))
+        remaining = .6 - (self.clock() - self.last_dispatch.get(self.target, float('-inf')))
         if remaining > 0:
             self.dispatch_timer.start(max(1, math.ceil(remaining * 1000)))
             return
@@ -266,7 +266,7 @@ class DirectionControl(QObject):
         self.last_dispatch[self.target] = self.clock()
         self.dispatch_one(camera, pan, tilt, input_number, repeat)
         if self.pending or self.repeat_request is not None:
-            self.dispatch_timer.start(500)
+            self.dispatch_timer.start(600)
 
     def dispatch_one(self, camera, pan, tilt, input_number, repeat):
         client = self.make_client(camera)

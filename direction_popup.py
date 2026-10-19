@@ -16,7 +16,7 @@ class DirectionPopup(QFrame):
         self.hold_timer = QTimer(self)
         self.hold_timer.setSingleShot(True)
         self.hold_timer.setTimerType(Qt.TimerType.PreciseTimer)
-        self.hold_timer.setInterval(500)
+        self.hold_timer.setInterval(600)
         self.hold_timer.timeout.connect(self.repeat_move)
         self.setObjectName('directionPopup')
         self.setStyleSheet('QFrame#directionPopup{background:rgba(19,24,33,248);'
