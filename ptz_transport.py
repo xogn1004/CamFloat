@@ -9,7 +9,7 @@ class MotionCancelled(OSError):
 
 
 class MotionAttempt:
-    def __init__(self, cancelled, before_send, on_event, timeout=.5, write_lock=None):
+    def __init__(self, cancelled, before_send, on_event, timeout=1, write_lock=None):
         self.cancelled = cancelled
         self.before_send = before_send
         self.on_event = on_event
@@ -42,6 +42,9 @@ class MotionAttempt:
         if remaining <= 0 or not self.write_lock.acquire(timeout=remaining):
             raise TimeoutError()
         self.write_acquired = True
+
+    def remaining(self):
+        return max(0, self.deadline - time.monotonic())
 
     def release_write(self):
         if self.write_acquired:

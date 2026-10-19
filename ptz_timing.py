@@ -28,8 +28,8 @@ class DirectionTiming:
 
     def snapshot(self):
         with self.lock:
-            return dict(version=self.version, click_ms=500, repeat_ms=160,
-                        request_limit_ms=500, max_requests=4, events=list(self.events))
+            return dict(version=self.version, dispatch_ms=500, repeat_ms=500, max_queue=5,
+                        request_limit_ms=1000, max_requests=4, events=list(self.events))
 
     def flush(self):
         if not self.enabled:

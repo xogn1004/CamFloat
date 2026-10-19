@@ -108,7 +108,7 @@ class DirectionPopupTests(unittest.TestCase):
         QTest.mousePress(button, Qt.MouseButton.LeftButton)
         QTest.qWait(40)
         self.assertTrue(any(x[0] == 'ContinuousMove' for x in FakeClient.calls))
-        QTest.qWait(400)
+        QTest.qWait(560)
         QTest.mouseRelease(button, Qt.MouseButton.LeftButton)
         QTest.qWait(50)
         count = len(FakeClient.calls)
@@ -136,7 +136,7 @@ class DirectionPopupTests(unittest.TestCase):
             QTest.mousePress(panel.buttons['right'], Qt.MouseButton.LeftButton)
             QTest.qWait(550)
             self.assertTrue(panel.hold_timer.isActive())
-            self.assertGreaterEqual(move.call_count, 3)
+            self.assertGreaterEqual(move.call_count, 2)
             self.assertFalse(panel.status.isVisible())
             self.assertTrue(all(b.isVisible() and b.isEnabled() for b in panel.buttons.values()))
             QTest.mouseRelease(panel.buttons['right'], Qt.MouseButton.LeftButton)
@@ -145,10 +145,9 @@ class DirectionPopupTests(unittest.TestCase):
             for _ in range(4):
                 QTest.mouseClick(panel.buttons['left'], Qt.MouseButton.LeftButton)
                 QTest.qWait(40)
-            # Separate clicks share a 500ms limit, including direction changes.
-            self.assertEqual(move.call_count, count + 1)
-            QTest.qWait(250)
-            self.assertEqual(move.call_count, count + 1)
+            # Four manual clicks survive release and drain through the queue.
+            QTest.qWait(2100)
+            self.assertEqual(move.call_count, count + 4)
             self.assertFalse(panel.status.isVisible())
 
     def test_hold_repeats_while_previous_replies_are_still_pending(self):
@@ -167,8 +166,8 @@ class DirectionPopupTests(unittest.TestCase):
             panel = self.open_panel()
             try:
                 QTest.mousePress(panel.buttons['right'], Qt.MouseButton.LeftButton)
-                QTest.qWait(400)
-                self.assertGreaterEqual(len(sent), 3)
+                QTest.qWait(620)
+                self.assertGreaterEqual(len(sent), 2)
                 self.assertTrue(self.window.direction_control.busy)
                 QTest.mouseRelease(panel.buttons['right'], Qt.MouseButton.LeftButton)
                 count = len(sent)
@@ -190,6 +189,20 @@ class DirectionPopupTests(unittest.TestCase):
             query.reset_mock()
             self.assertTrue(self.window.commit_camera_draft(cameras, maps, True))
             query.assert_not_called()
+
+    def test_app_change_discards_queued_manual_clicks(self):
+        panel = self.open_panel()
+        for _ in range(4):
+            QTest.mouseClick(panel.buttons['left'], Qt.MouseButton.LeftButton)
+            QTest.qWait(20)
+        control = self.window.direction_control
+        self.assertTrue(control.pending)
+        self.window.application_state_changed(Qt.ApplicationState.ApplicationInactive)
+        self.assertFalse(control.pending)
+        QTest.qWait(100)
+        count = len(FakeClient.calls)
+        QTest.qWait(650)
+        self.assertEqual(len(FakeClient.calls), count)
 
 
 if __name__ == '__main__':

@@ -110,17 +110,24 @@ class Client:
         result = {'operation': operation, 'response_verified': False, 'request_sent': False}
         root = None
         action = namespace + '/' + operation
+        phase = 1  # connect
         try:
             if attempt is not None:
                 attempt.start(connection)
+                phase = 2  # wait for the shared send phase
+                attempt.acquire_write(connection)
                 # Connect before the final cancellation gate. A delayed connect
                 # must not send an old command after release or a newer command.
+                if hasattr(connection, 'timeout'):
+                    connection.timeout = min(connection.timeout, max(.001, attempt.remaining()))
                 connect = getattr(connection, 'connect', None)
                 if connect is not None:
+                    phase = 1
                     connect()
-                attempt.acquire_write(connection)
+                phase = 3  # final cancellation/deadline gate
                 attempt.before_request(connection)
             try:
+                phase = 4  # write request
                 connection.request('POST', path, body, {'Content-Type': 'application/soap+xml; charset=utf-8; action="' + action + '"',
                                                        'SOAPAction': '"' + action + '"', 'Connection': 'close'})
             finally:
@@ -131,11 +138,14 @@ class Client:
                 attempt.request_sent()
             if on_sent:
                 on_sent()
+            phase = 5  # response headers
             response = connection.getresponse()
             result['http_status'] = response.status
+            phase = 6  # response body
             raw = response.read(262145)
             if len(raw) > 262144 or b'<!DOCTYPE' in raw.upper():
                 raise ValueError('Invalid SOAP reply')
+            phase = 7  # SOAP parsing
             root = ET.fromstring(raw)
             soap_body = root.find('{' + SOAP + '}Body')
             if soap_body is not None:
@@ -145,6 +155,7 @@ class Client:
                 result['response_verified'] = response.status == 200 and fault is None and expected is not None
         except ERRORS as error:
             result['error'] = type(error).__name__
+            result['failure_phase'] = phase
         finally:
             if attempt is not None:
                 attempt.finish()
@@ -196,7 +207,7 @@ class Client:
         if not self.ptz_path or not self.profile_token or not direction_valid(pan, tilt):
             raise ValueError('Control metadata required')
         return self.call(self.ptz_path, PTZ, 'ContinuousMove', pan=pan, tilt=tilt,
-                         timeout=.15, attempt=attempt)[0]
+                         timeout=1, attempt=attempt)[0]
 
 
 def pulse(client, pan, tilt=0, cancelled=None):

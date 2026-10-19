@@ -47,98 +47,148 @@ class DispatchTests(unittest.TestCase):
         self.eligible.stop()
 
     def pump(self, predicate):
-        for _ in range(100):
+        for _ in range(150):
             self.app.processEvents()
             if predicate():
                 return
             QTest.qWait(10)
         self.fail('Asynchronous condition was not reached')
 
-    def test_click_limit_is_camera_wide_and_allows_exactly_500ms(self):
-        self.assertTrue(self.control.move(self.camera, -1, 0))
-        self.assertFalse(self.control.move(self.camera, 1, 0))
-        self.now += .499
-        self.assertFalse(self.control.move(self.camera, 0, 1))
-        self.now += .0011
-        self.assertTrue(self.control.move(self.camera, 0, -1))
+    def advance(self, seconds=.5):
+        self.now += seconds
+        self.control.dispatch_pending()
+        self.pump(lambda: not self.control.busy)
 
-    def test_repeats_bypass_click_limit_and_do_not_wait_for_replies(self):
+    def test_clicks_queue_five_in_addition_to_dispatched_request(self):
+        self.assertTrue(self.control.move(self.camera, -1, 0))
+        self.pump(lambda: not self.control.busy)
+        for _ in range(5):
+            self.assertTrue(self.control.move(self.camera, -1, 0))
+        self.assertFalse(self.control.move(self.camera, -1, 0))
+        self.assertEqual(len(self.control.pending), 5)
+        self.control.end_input()
+        for expected in range(2, 7):
+            self.advance()
+            self.assertEqual(len(FakeClient.calls), expected)
+        self.advance()
+        self.assertEqual(len(FakeClient.calls), 6)
+
+    def test_500ms_boundary_and_no_catchup_burst(self):
+        self.control.move(self.camera, -1, 0)
+        self.pump(lambda: not self.control.busy)
+        for _ in range(3): self.control.move(self.camera, -1, 0)
+        self.now += .499
+        self.control.dispatch_pending()
+        self.assertEqual(len(FakeClient.calls), 1)
+        self.now += .002
+        self.control.dispatch_pending()
+        self.pump(lambda: not self.control.busy)
+        self.assertEqual(len(FakeClient.calls), 2)
+        self.advance(3)
+        self.assertEqual(len(FakeClient.calls), 3)
+        self.control.dispatch_pending()
+        self.assertEqual(len(FakeClient.calls), 3)
+
+    def test_hold_waits_for_queue_then_continues_at_500ms(self):
+        self.control.move(self.camera, 1, 0)
+        self.pump(lambda: not self.control.busy)
+        for _ in range(2): self.control.move(self.camera, 1, 0)
+        self.assertTrue(self.control.move(self.camera, 1, 0, repeat=True))
+        self.advance()
+        self.advance()
+        self.advance()
+        dispatches = [r for r in self.control.timing.snapshot()['events'] if r['event'] == 'dispatch']
+        self.assertEqual([r['repeat'] for r in dispatches], [False, False, False, True])
+        self.control.end_input()
+        self.advance()
+        self.assertEqual(len(FakeClient.calls), 4)
+
+    def test_releasing_while_queue_drains_never_starts_hold(self):
+        self.control.move(self.camera, 1, 0)
+        self.pump(lambda: not self.control.busy)
+        for _ in range(2): self.control.move(self.camera, 1, 0)
+        self.control.move(self.camera, 1, 0, repeat=True)
+        self.control.end_input()
+        for _ in range(4): self.advance()
+        self.assertEqual(len(FakeClient.calls), 3)
+        self.assertTrue(all(not r['repeat'] for r in self.control.timing.snapshot()['events'] if r['event'] == 'dispatch'))
+
+    def test_direction_change_replaces_pending_requests(self):
+        self.control.move(self.camera, -1, 0)
+        self.pump(lambda: not self.control.busy)
+        for _ in range(5): self.control.move(self.camera, -1, 0)
+        self.control.move(self.camera, 1, 0)
+        self.assertEqual(len(self.control.pending), 1)
+        self.control.end_input()
+        self.advance()
+        self.advance()
+        self.assertEqual([r[1] for r in FakeClient.calls], [-1, 1])
+
+    def test_cancel_discards_queue_and_hold(self):
+        self.control.move(self.camera, 1, 0)
+        self.pump(lambda: not self.control.busy)
+        self.control.move(self.camera, 1, 0)
+        self.control.move(self.camera, 1, 0, repeat=True)
+        self.control.cancel()
+        self.advance()
+        self.assertFalse(self.control.pending)
+        self.assertIsNone(self.control.repeat_request)
+        self.assertEqual(len(FakeClient.calls), 1)
+
+    def test_repeats_do_not_wait_for_acknowledgements(self):
         gate = threading.Event()
         self.gates.append(gate)
         entered = []
         def delayed(client, pan, tilt=0, *, attempt):
             entered.append(pan)
-            gate.wait(2)
+            gate.wait(3)
             return {'request_sent': True, 'response_verified': False}
         with patch.object(FakeClient, 'step', delayed):
-            self.assertTrue(self.control.move(self.camera, 1, 0))
+            self.control.move(self.camera, 1, 0)
             self.pump(lambda: len(entered) == 1)
-            self.now += .16
-            self.assertTrue(self.control.move(self.camera, 1, 0, repeat=True))
+            self.now += .5
+            self.control.move(self.camera, 1, 0, repeat=True)
             self.pump(lambda: len(entered) == 2)
-            self.assertTrue(self.control.busy)
+            self.control.end_input()
             gate.set()
             self.pump(lambda: not self.control.busy)
 
-    def test_limit_four_stops_input_without_a_waiting_queue(self):
+    def test_resource_bound_preserves_manual_queue_without_hiding_buttons(self):
         gate = threading.Event()
         self.gates.append(gate)
         entered = []
         def delayed(client, pan, tilt=0, *, attempt):
             entered.append(1)
-            gate.wait(2)
+            gate.wait(3)
             return {'request_sent': True, 'response_verified': False}
         with patch.object(FakeClient, 'step', delayed):
+            self.control.move(self.camera, 1, 0)
+            for expected in range(1, 5):
+                self.pump(lambda: len(entered) == expected)
+                if expected < 4:
+                    self.now += .5
+                    self.control.move(self.camera, 1, 0, repeat=True)
+            self.now += .5
             self.assertTrue(self.control.move(self.camera, 1, 0))
-            for _ in range(3):
-                self.now += .16
-                self.assertTrue(self.control.move(self.camera, 1, 0, repeat=True))
-            self.pump(lambda: len(entered) == 4)
-            self.assertFalse(self.control.move(self.camera, 1, 0, repeat=True))
-            self.assertEqual(self.control.state, 'send_limit')
-            self.assertFalse(self.control.input_open)
-            gate.set()
-            self.pump(lambda: self.control.state == 'ready')
             self.assertEqual(len(entered), 4)
-
-    def test_last_old_reply_clears_limit_without_overwriting_new_reply(self):
-        self.control.begin_input()
-        client = self.control.client
-        token = self.control.input_cancelled
-        response = {'request_sent': True, 'response_verified': False, 'new': True}
-        self.control.state = 'send_limit'
-        with self.control.jobs_lock:
-            self.control.jobs[1] = object()
-        self.control.finish(self.control.revision, (4, token, client, response, self.camera))
-        self.assertEqual(self.control.state, 'send_limit')
-        with self.control.jobs_lock:
-            self.control.jobs.clear()
-        self.control.finish(self.control.revision, (1, token, client,
-            {'request_sent': True, 'http_status': 401}, self.camera))
-        self.assertEqual(self.control.state, 'ready')
-        self.assertIs(self.control.last_reply, response)
-
-    def test_late_old_reply_cannot_overwrite_newer_result(self):
-        gate = threading.Event()
-        self.gates.append(gate)
-        entered = threading.Event()
-        def delayed(client, pan, tilt=0, *, attempt):
-            if pan == -1:
-                entered.set()
-                gate.wait(2)
-            return {'request_sent': True, 'response_verified': True, 'pan': pan}
-        with patch.object(FakeClient, 'step', delayed):
-            self.control.move(self.camera, -1, 0)
-            self.assertTrue(entered.wait(1))
-            self.control.move(self.camera, 1, 0, repeat=True)
-            self.pump(lambda: self.control.last_reply and self.control.last_reply.get('pan') == 1)
+            self.assertEqual(len(self.control.pending), 1)
+            self.assertEqual(self.control.state, 'moving')
+            self.control.end_input()
             gate.set()
             self.pump(lambda: not self.control.busy)
-            self.app.processEvents()
-            self.assertEqual(self.control.last_reply['pan'], 1)
-            self.assertEqual(self.control.state, 'ready')
+            self.control.dispatch_pending()
+            self.pump(lambda: len(entered) == 5)
 
-    def test_release_cancels_unsent_and_new_camera_survives_old_reply(self):
+    def test_late_old_reply_cannot_overwrite_newer_result(self):
+        client = self.control.client
+        token = self.control.input_cancelled
+        newer = {'request_sent': True, 'response_verified': False, 'new': True}
+        self.control.finish(self.control.revision, (4, token, client, newer, self.camera))
+        self.control.finish(self.control.revision, (1, token, client, {'http_status': 401}, self.camera))
+        self.assertIs(self.control.last_reply, newer)
+        self.assertEqual(self.control.state, 'ready')
+
+    def test_new_camera_cancels_old_unsent_request(self):
         gate = threading.Event()
         self.gates.append(gate)
         entered = threading.Event()
@@ -153,7 +203,6 @@ class DispatchTests(unittest.TestCase):
         with patch.object(FakeClient, 'step', waiting):
             self.control.move(self.camera, 1, 0)
             self.assertTrue(entered.wait(1))
-            self.control.end_input()
             other = dict(self.camera, id='other')
             other['ptz'] = dict(defaults(other), checked=True)
             self.control.prepare(other)
@@ -164,24 +213,34 @@ class DispatchTests(unittest.TestCase):
             self.assertEqual(self.control.target[0], 'other')
             self.assertEqual(self.control.state, 'ready')
 
-    def test_reply_from_old_press_does_not_interrupt_new_press(self):
+    def test_releasing_cancels_unsent_hold_but_not_manual_click(self):
         gate = threading.Event()
         self.gates.append(gate)
-        entered = threading.Event()
+        entered = []
+        writes = []
         def waiting(client, pan, tilt=0, *, attempt):
-            entered.set()
+            entered.append(1)
             gate.wait(2)
-            return {'request_sent': True, 'http_status': 401}
+            if attempt.cancelled.is_set() or not attempt.before_send():
+                return {'cancelled': True, 'request_sent': False}
+            writes.append(pan)
+            return {'request_sent': True}
         with patch.object(FakeClient, 'step', waiting):
-            self.control.move(self.camera, -1, 0)
-            self.assertTrue(entered.wait(1))
+            self.control.move(self.camera, 1, 0)
+            self.pump(lambda: len(entered) == 1)
             self.control.end_input()
-            self.control.begin_input()
             gate.set()
             self.pump(lambda: not self.control.busy)
-            self.app.processEvents()
-            self.assertTrue(self.control.input_open)
-            self.assertNotEqual(self.control.state, 'move_error')
+            self.assertEqual(writes, [1])
+            gate.clear()
+            self.control.begin_input()
+            self.now += .5
+            self.control.move(self.camera, 1, 0, repeat=True)
+            self.pump(lambda: len(entered) == 2)
+            self.control.end_input()
+            gate.set()
+            self.pump(lambda: not self.control.busy)
+            self.assertEqual(writes, [1])
 
 
 class TransportTests(unittest.TestCase):
@@ -239,6 +298,7 @@ class TransportTests(unittest.TestCase):
         result = client.step(1, attempt=attempt)
         self.assertTrue(result['cancelled'])
         self.assertFalse(result['request_sent'])
+        self.assertEqual(result['failure_phase'], 3)
         self.assertEqual(calls, ['close'])
 
     def test_total_deadline_interrupts_a_trickling_reply(self):
@@ -267,7 +327,8 @@ class TransportTests(unittest.TestCase):
                 elapsed = time.monotonic() - started
                 self.assertTrue(result['request_sent'])
                 self.assertTrue(result['deadline_exceeded'])
-                self.assertLess(elapsed, .9)
+                self.assertGreater(elapsed, .85)
+                self.assertLess(elapsed, 1.4)
             finally:
                 stop.set()
                 serving.join(2)

@@ -1,11 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
+from pathlib import Path
+
+build_icon = 'camfloat-c500gs.ico' if (Path(SPECPATH) / 'camfloat-c500gs.ico').is_file() else 'camfloat.ico'
 
 
 a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('camfloat.ico', '.'), ('vendor/vlc', 'vlc')],
+    datas=[(build_icon, '.'), ('vendor/vlc', 'vlc')],
     hiddenimports=['vlc'],
     hookspath=[],
     hooksconfig={},
@@ -51,7 +54,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['camfloat.ico'],
+    icon=[build_icon],
     version='version_info.txt',
 )
 coll = COLLECT(

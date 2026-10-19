@@ -1,5 +1,6 @@
 """Summarize local timing counters; no camera requests or settings changes."""
 import argparse
+from collections import Counter
 import json
 from pathlib import Path
 import statistics
@@ -27,14 +28,19 @@ def summarize(document):
         dispatch = dispatched.get(row.get('seq'), {})
         end = ends.get(dispatch.get('input'))
         return end is not None and row['ms'] > end
+    def hold_after_end(row):
+        return dispatched.get(row.get('seq'), {}).get('repeat', True) and after_end(row)
     def stats(values):
         return (dict(min=round(min(values), 3), median=round(statistics.median(values), 3),
                      max=round(max(values), 3)) if values else None)
     return dict(sent=len(sent), click_ignored=sum(r.get('event') == 'click_ignored' for r in events),
                 request_limit=sum(r.get('event') == 'request_limit' for r in events),
                 send_interval_ms=stats(gaps), request_duration_ms=stats(durations),
-                write_started_after_release=sum(after_end(r) for r in writes),
-                transmission_completed_after_release=sum(after_end(r) for r in sent),
+                write_started_after_release=sum(hold_after_end(r) for r in writes),
+                transmission_completed_after_release=sum(hold_after_end(r) for r in sent),
+                queued_click_writes_after_release=sum(after_end(r) and not hold_after_end(r) for r in writes),
+                failure_phases=dict(Counter(r['failure_phase'] for r in events
+                    if r.get('event') == 'reply' and type(r.get('failure_phase')) is int)),
                 cancelled=sum(bool(r.get('cancelled')) for r in events if r.get('event') == 'reply'),
                 deadline_exceeded=sum(bool(r.get('deadline')) for r in events if r.get('event') == 'reply'))
 

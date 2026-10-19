@@ -99,7 +99,7 @@ class ONVIFTrialTests(unittest.TestCase):
         client.ptz_path, client.ptz_port, client.profile_token = '/custom/ptz', 8080, 'profile'
         result = client.step(0, 1)
         self.assertTrue(result['response_verified'])
-        self.assertEqual(calls[0], ('connection', 8080, .15))
+        self.assertEqual(calls[0], ('connection', 8080, 1))
         requests = [c for c in calls if c[0] == 'request']
         self.assertEqual(len(requests), 1)
         root = ET.fromstring(requests[0][2])

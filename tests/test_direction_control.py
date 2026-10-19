@@ -96,7 +96,10 @@ class DirectionControlTests(unittest.TestCase):
         self.wait_state('ready')
         self.assertEqual(FakeClient.calls, [])
         self.assertTrue(self.control.move(self.camera, 0, 1))
-        self.assertFalse(self.control.move(self.camera, -1, 0))
+        self.assertTrue(self.control.done.wait(1))
+        self.app.processEvents()
+        self.assertTrue(self.control.move(self.camera, -1, 0))
+        self.assertEqual(len(self.control.pending), 1)
         self.wait_state('ready')
         self.assertEqual([x for x in FakeClient.calls if x[0] == 'ContinuousMove'], [('ContinuousMove', 0, 1)])
         self.assertEqual([x[0] for x in FakeClient.calls].count('Stop'), 0)
@@ -171,12 +174,12 @@ class DirectionControlTests(unittest.TestCase):
             query.assert_not_called()
         self.assertIsNone(validated(info, dict(camera, url=camera['url'] + '?changed')))
 
-    def test_reply_failure_refreshes_metadata_without_replaying_movement(self):
+    def test_reply_failure_is_diagnostic_without_discovery_or_replay(self):
         camera = dict(self.camera, ptz=dict(defaults(self.camera), checked=True))
         with patch.object(FakeClient, 'step', return_value={'request_sent': True, 'response_verified': False, 'soap_fault': True}) as move:
             self.control.prepare(camera)
             self.control.move(camera, 1, 0)
-            self.wait_state('move_error')
+            self.wait_state('ready')
             self.assertTrue(self.control.lookup_done.wait(1))
             self.app.processEvents()
             self.assertEqual(move.call_count, 1)
@@ -205,6 +208,22 @@ class DirectionControlTests(unittest.TestCase):
                        {'request_sent': True, 'http_status': 401},
                        {'request_sent': True, 'http_status': 200, 'soap_fault': True}):
             self.assertTrue(delivery_failed(result))
+
+    def test_all_motion_reply_kinds_are_diagnostic_only(self):
+        camera = dict(self.camera, ptz=dict(defaults(self.camera), checked=True))
+        for response in ({'request_sent': True, 'http_status': 401},
+                         {'request_sent': True, 'soap_fault': True},
+                         {'request_sent': False, 'error': 'TimeoutError'},
+                         {'request_sent': True, 'response_verified': True, 'http_status': 200}):
+            with self.subTest(response=response), patch.object(FakeClient, 'step', return_value=response), \
+                    patch.object(FakeClient, 'discover') as query:
+                self.now += 2
+                self.control.prepare(camera)
+                self.control.move(camera, 1, 0)
+                self.wait_state('ready')
+                self.assertEqual(self.control.last_reply, response)
+                self.assertEqual(self.control.hints(camera), camera['ptz'])
+                query.assert_not_called()
 
     def test_metadata_is_encrypted_in_settings_and_not_exported(self):
         camera = new_camera('Synthetic', self.camera['url'])

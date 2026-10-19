@@ -1,17 +1,21 @@
 """Management entry and native message regression; no live camera connections."""
 import ctypes
+import ipaddress
+import threading
 import sys
 import unittest
 from ctypes import wintypes
 from unittest.mock import patch
 
-from PySide6.QtCore import QEvent, QObject, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QTimer, Signal, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton
 
 import test_app as fixtures
 from camera_model import new_camera
 from dialogs import CameraEditor, CameraManager
+from ptz_metadata import defaults, support_state
+from test_direction_control import FakeClient
 
 
 class ManagementEntry(unittest.TestCase):
@@ -105,6 +109,72 @@ class ManagementEntry(unittest.TestCase):
         self.assertFalse(any('복사' in action for action in actions))
         menu.deleteLater()
         manager.deleteLater()
+
+    def test_direction_column_labels_and_scope(self):
+        manager = CameraManager([self.camera])
+        self.assertEqual([manager.model.headerData(i, Qt.Orientation.Horizontal) for i in range(6)],
+                         ['번호', '카메라', '화질', '방향 조작', '사용', ''])
+        self.assertEqual(manager.model.data(manager.model.index(0, 3)), '앱 미지원')
+        camera = dict(self.camera, url=f'rtsp://user:synthetic@{str(ipaddress.IPv4Address(0x0a000007))}/onvif1')
+        self.assertEqual(support_state(camera), 'unchecked')
+        camera['ptz'] = dict(defaults(camera), checked=True)
+        self.assertEqual(support_state(camera), 'unknown')
+        camera['ptz'] = dict(defaults(camera), checked=True, source='device')
+        self.assertEqual(support_state(camera), 'supported')
+        camera['ptz']['lookup_result'] = 'unknown'
+        self.assertEqual(support_state(camera), 'unknown')
+        self.assertEqual(support_state(dict(camera, enabled=False)), 'unknown')
+        manager.deleteLater()
+
+    def test_direction_lookup_does_not_dirty_draft_hide_fields_or_move(self):
+        camera = dict(self.camera, url=f'rtsp://user:synthetic@{str(ipaddress.IPv4Address(0x0a000007))}/onvif1')
+        gate = threading.Event()
+        FakeClient.calls = []
+        FakeClient.gate = gate
+        with patch('ptz_control.Client', FakeClient):
+            manager = CameraManager([camera])
+            self.assertEqual(manager.model.data(manager.model.index(0, 3)), '미확인')
+            baseline = manager.snapshot()
+            try:
+                manager.show()
+                self.assertEqual(manager.model.data(manager.model.index(0, 3)), '확인 중…')
+                manager.details['host'].toggle()
+                gate.set()
+                for _ in range(100):
+                    self.app.processEvents()
+                    if manager.model.data(manager.model.index(0, 3)) == '지원':
+                        break
+                    QTest.qWait(10)
+                self.assertEqual(manager.model.data(manager.model.index(0, 3)), '지원')
+                self.assertEqual(manager.snapshot(), baseline)
+                self.assertTrue(manager.details['host'].revealed)
+                self.assertEqual(manager.table.currentRow(), 0)
+                self.assertEqual(FakeClient.calls, [])
+                self.assertFalse(any('방향 조작 확인' in a.text() for a in manager.build_row_menu().actions()))
+            finally:
+                gate.set()
+                FakeClient.gate = None
+                manager.done(QDialog.DialogCode.Rejected)
+                manager.deleteLater()
+
+    def test_failed_lookup_is_unknown_and_new_entry_retries(self):
+        camera = dict(self.camera, url=f'rtsp://user:synthetic@{str(ipaddress.IPv4Address(0x0a000007))}/onvif1')
+        camera['ptz'] = dict(defaults(camera), checked=True, source='device')
+        with patch('ptz_control.Client', FakeClient), patch.object(FakeClient, 'discover', return_value={'profile_verified': False}) as query:
+            for expected in (1, 2):
+                manager = CameraManager([camera])
+                manager.show()
+                for _ in range(100):
+                    self.app.processEvents()
+                    if manager.model.data(manager.model.index(0, 3)) == '알 수 없음':
+                        break
+                    QTest.qWait(10)
+                self.assertEqual(manager.model.data(manager.model.index(0, 3)), '알 수 없음')
+                manager.refresh()
+                self.assertEqual(query.call_count, expected)
+                camera = manager.cameras[0]
+                manager.done(QDialog.DialogCode.Rejected)
+                manager.deleteLater()
 
     def test_empty_and_partial_url_can_return_to_simple_without_loss(self):
         editor = CameraEditor()

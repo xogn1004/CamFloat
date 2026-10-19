@@ -34,7 +34,7 @@ from ptz_control import DirectionControl
 from ptz_metadata import validated as validated_control, binding as control_binding
 from direction_popup import DirectionPopup
 
-VERSION = '1.1.0-rc.2'
+VERSION = '1.1.0-dev.4'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -46,7 +46,9 @@ QSlider::handle:horizontal{background:#d4e6ff;width:10px;margin:-4px 0;border-ra
 
 
 def app_icon():
-    return QIcon(str(Path(__file__).resolve().with_name('camfloat.ico')))
+    root = Path(__file__).resolve().parent
+    path = root / 'camfloat-c500gs.ico'
+    return QIcon(str(path if path.is_file() else root / 'camfloat.ico'))
 
 
 class PlayerTile(QWidget):

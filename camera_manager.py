@@ -19,6 +19,12 @@ from feedback import Feedback, confirm_action
 from camera_archive import encode, read_file, import_candidates
 from camera_transfer import ImportPreview
 from hover_tips import HoverTips
+from ptz_control import DirectionControl, camera_key, eligible
+from ptz_metadata import support_state, validated as validated_control
+
+
+DIRECTION_LABELS = {'unchecked': '미확인', 'supported': '지원', 'unknown': '알 수 없음',
+                    'unsupported': '앱 미지원', 'checking': '확인 중…'}
 
 
 class CameraListModel(QAbstractTableModel):
@@ -30,11 +36,13 @@ class CameraListModel(QAbstractTableModel):
         return 0 if parent.isValid() else len(self.cameras)
 
     def columnCount(self, parent=QModelIndex()):
-        return 0 if parent.isValid() else 5
+        return 0 if parent.isValid() else 6
 
     def headerData(self, section, orientation, role=Qt.ItemDataRole.DisplayRole):
         if orientation == Qt.Orientation.Horizontal and role == Qt.ItemDataRole.DisplayRole:
-            return ['번호', '카메라', '화질', '사용', ''][section]
+            return ['번호', '카메라', '화질', '방향 조작', '사용', ''][section]
+        if orientation == Qt.Orientation.Horizontal and section == 3 and role == Qt.ItemDataRole.ToolTipRole:
+            return '카메라가 제공한 정보로 판단합니다.'
         return None
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
@@ -44,8 +52,12 @@ class CameraListModel(QAbstractTableModel):
         if role == Qt.ItemDataRole.UserRole:
             return camera['id']  # Only stable identifiers, never connection URLs.
         if role == Qt.ItemDataRole.DisplayRole:
+            parent = self.parent()
+            state = parent.direction_support(camera) if hasattr(parent, 'direction_support') else support_state(camera)
             return [f"{camera['number']:02}", camera_display_name(camera), camera['quality'],
-                    '사용' if camera.get('enabled', True) else '사용 안 함', '⋯'][index.column()]
+                    DIRECTION_LABELS[state], '사용' if camera.get('enabled', True) else '사용 안 함', '⋯'][index.column()]
+        if role == Qt.ItemDataRole.ToolTipRole and index.column() == 3:
+            return '카메라가 제공한 정보로 판단합니다.'
         if role == Qt.ItemDataRole.TextAlignmentRole and index.column() != 1:
             return Qt.AlignmentFlag.AlignCenter
         return None
@@ -68,6 +80,14 @@ class CameraManager(QDialog):
         self.tips = HoverTips(self)
         self.settings_reset = False
         self.cameras = copy.deepcopy(cameras)
+        self.support_control = DirectionControl(self, diagnostics_enabled=False)
+        self.support_control.metadata_ready.connect(self.store_direction_support)
+        self.support_control.lookup_changed.connect(self.refresh_direction_support)
+        self._support_opened = False
+        self._support_requested = set()
+        self.finished.connect(lambda *_: self.support_control.shutdown())
+        support_control = self.support_control
+        self.destroyed.connect(lambda *_: support_control.shutdown())
         self.edit_layout = layout
         self.commit_callback = commit_callback
         host_config = getattr(parent, 'config', {})
@@ -160,11 +180,11 @@ class CameraManager(QDialog):
         self.table.verticalHeader().hide()
         self.table.verticalHeader().setDefaultSectionSize(34)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for col, width in ((0, 40), (2, 42), (3, 68), (4, 28)):
+        for col, width in ((0, 40), (2, 42), (3, 84), (4, 68), (5, 28)):
             self.table.setColumnWidth(col, width)
         self.table.selectionModel().selectionChanged.connect(lambda *_: self.update_buttons())
-        self.table.doubleClicked.connect(lambda index: self.edit_camera() if index.column() != 4 else None)
-        self.table.clicked.connect(lambda index: self.row_menu(index) if index.column() == 4 else None)
+        self.table.doubleClicked.connect(lambda index: self.edit_camera() if index.column() != 5 else None)
+        self.table.clicked.connect(lambda index: self.row_menu(index) if index.column() == 5 else None)
         left_layout.addWidget(self.table, 1)
         self.empty_label = QLabel('등록된 카메라가 없습니다.', self.table.viewport())
         self.empty_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -266,7 +286,42 @@ class CameraManager(QDialog):
         self.tabs.addTab(page, '화면별 카메라')
 
     def snapshot(self):
-        return copy.deepcopy((self.cameras, self.layout_slots, self.verify_connection_info, self.settings_reset))
+        cameras = [{key: value for key, value in camera.items() if key != 'ptz'} for camera in self.cameras]
+        return copy.deepcopy((cameras, self.layout_slots, self.verify_connection_info, self.settings_reset))
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        if not self._support_opened:
+            self._support_opened = True
+            self.query_direction_support()
+
+    def direction_support(self, camera):
+        key = camera_key(camera)
+        if key == self.support_control.active_lookup or key in self.support_control.lookups:
+            return 'checking'
+        return support_state(camera)
+
+    def query_direction_support(self):
+        if not self._support_opened or self.support_control.closed:
+            return
+        for camera in self.cameras:
+            key = camera_key(camera)
+            if eligible(camera) and key not in self._support_requested:
+                self._support_requested.add(key)
+                self.support_control.discover(camera, force=True)
+
+    def refresh_direction_support(self):
+        if hasattr(self, 'model') and self.cameras:
+            self.model.dataChanged.emit(self.model.index(0, 3), self.model.index(len(self.cameras) - 1, 3),
+                                        [Qt.ItemDataRole.DisplayRole])
+
+    def store_direction_support(self, key, info):
+        camera = next((camera for camera in self.cameras if camera_key(camera) == key), None)
+        if camera is not None:
+            checked = validated_control(info, camera)
+            if checked:
+                camera['ptz'] = checked
+                self.refresh_direction_support()
 
     def selected_camera(self):
         row = self.table.currentRow()
@@ -281,6 +336,7 @@ class CameraManager(QDialog):
         if self.cameras:
             self.table.selectRow(max(0, min(selected, len(self.cameras) - 1)))
         self.filter_rows()
+        self.query_direction_support()
 
     def refresh_screen_choices(self):
         for card in self.screen_cards:
