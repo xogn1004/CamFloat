@@ -35,7 +35,10 @@ exit /b 0
 :staged
 call ".venv\Scripts\python.exe" package_release.py --staged
 if errorlevel 1 goto :failed
-echo Build complete: %CAMFLOAT_STAGE%\dist\CamFloat\CamFloat.exe
+rem Publish one current development folder outside app-private AppData paths.
+robocopy "%CAMFLOAT_STAGE%\dist\CamFloat" "%~dp0dist\CamFloat" /E /COPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS
+if errorlevel 8 goto :failed
+echo Build complete: %~dp0dist\CamFloat\CamFloat.exe
 exit /b 0
 
 :failed

@@ -15,7 +15,9 @@ cd CamFloat
 
 `build.bat`은 가상 환경·의존성 설치, 공식 LGPL libVLC 패키지 다운로드·체크섬 확인, 아이콘 생성과 PyInstaller 빌드를 수행합니다. VLC를 별도로 설치할 필요가 없습니다. 개발·RC 버전은 자동으로 별도 빌드 경로에 보관하며, 정식 버전의 기본 결과는 `release/CamFloat/`입니다.
 
-앱을 실행 중이라면 `build.bat --staged`로 별도 빌드합니다. 결과는 `%LOCALAPPDATA%/CamFloatBuild/current/dist/CamFloat`이며, `package_release.py --staged --archive`로 해당 결과를 압축할 수 있습니다.
+앱을 실행 중이라면 `build.bat --staged`로 별도 빌드합니다. 실행할 개발본은 프로젝트의 `dist/CamFloat/CamFloat.exe`입니다. 버전별 폴더를 만들지 않고 이 경로에 최신 개발본 하나를 둡니다. Codex 등 패키지 앱 안에서는 AppData 경로가 탐색기에 보이는 경로와 다를 수 있으므로 실행 안내에는 프로젝트 경로를 사용합니다.
+
+빌드·패키징 작업용 파일은 `%LOCALAPPDATA%/CamFloatBuild/current`에 보관합니다. `package_release.py --staged --archive`는 그 안의 결과를 압축합니다. `dist/`는 Git·정식 릴리즈에 포함하지 않습니다.
 
 - 배포 ZIP에는 EXE·런타임·라이선스·시작 안내만 넣습니다.
 - `release/`에는 최신 실행 폴더·ZIP·체크섬만 보관합니다. 외부 라이브러리 소스 자료는 `vendor/source-assets/`에 둡니다.
