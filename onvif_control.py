@@ -99,10 +99,13 @@ class Client:
         self.ptz_path = None
         self.ptz_port = 5000
 
+    def build_envelope(self, namespace, operation, pan, tilt, device_timeout_ms):
+        return envelope(self.parts, namespace, operation, self.profile_token, pan, tilt,
+                        device_timeout_ms=device_timeout_ms)
+
     def call(self, path, namespace, operation, pan=None, on_sent=None, tilt=0, port=None, timeout=1,
              *, device_timeout_ms=250):
-        body = envelope(self.parts, namespace, operation, self.profile_token, pan, tilt,
-                        device_timeout_ms=device_timeout_ms)
+        body = self.build_envelope(namespace, operation, pan, tilt, device_timeout_ms)
         connection = self.connection_factory(self.parts.hostname, port or (self.ptz_port if namespace == PTZ else 5000), timeout=timeout)
         result = {'operation': operation, 'response_verified': False, 'request_sent': False}
         root = None

@@ -72,6 +72,8 @@ cd CamFloat
 
 별도의 실제 카메라 회전 시험은 `camera-control-test.bat`입니다. 일반 검사 명령에 포함되지 않으며 사용자가 대상을 선택하고 이동을 요청할 때만 조작합니다. Enter/R은 좌우·U/D는 상하 시험입니다. `--delay 10`으로 이동 전 대기 시간을 지정할 수 있고(0~300초, 기본 3초), `--probe`는 기능 조회만 수행합니다. 사용자 수동 시험에서 상하좌우 이동과 멈춤을 확인했습니다. 기기 반전 설정에 따라 방향이 달라질 수 있고, 명시적 정지와 기기 시간 제한의 효과는 아직 분리 검증하지 않았습니다. [지원 조사와 시험 방법](post-release-plan.md#후속-onvif-조사와-시험-도구)을 먼저 확인하세요.
 
+연속 이동 조사는 두 모드로 구분합니다. `camera-control-test.bat --continuous`는 기기 시간 제한 0.25초·1초·2초를 비교합니다. `camera-control-test.bat --compat`는 시간 제한·줌 항목을 생략한 최소 요청, 최소 `Stop`, 속도 0 정지, 좌표계 명시를 비교합니다. 후자는 이동 명령을 한 번 보내고 별도 스레드가 1초 뒤 정지를 요청합니다. 기기 시간 제한이 없으므로 렌즈를 직접 보며 시험하고, 멈추지 않으면 제조사 앱에서 멈춰야 합니다. `X`로 관찰 결과를 기록하면 추가 시험을 중단합니다. `1/2/3`은 방식 선택, `L/R/U/D`는 한 번 이동, `Q`는 종료입니다. 앱의 방향 패널에는 이 실험을 적용하지 않습니다. 기록은 로컬 `verification/current/camera-control/compat-manual-latest.json`에 보관합니다.
+
 스피커 시험은 `camera-speaker-test.bat`입니다. 카메라 선택 후 대기·전송 시간을 입력하거나 `--delay 20 --duration 5`로 지정할 수 있습니다. 마이크·실제 녹음 파일 대신 작은 합성음을 사용합니다. `--probe`는 열기·닫기만 요청합니다. 일반 검사와 실제 카메라 청취 시험을 구분하며 [말하기 조사](post-release-plan.md#말하기-전송-경로-조사)를 참고하세요.
 
 Android 제조사 앱 조사 도구는 `android-app-check.bat`입니다. 공식 [Platform-Tools](https://developer.android.com/tools/releases/platform-tools)의 ADB·DLL을 `%LOCALAPPDATA%/CamFloatQA/android/platform-tools`에 준비하고, 휴대폰에서 USB 디버깅·PC 연결을 허용해야 합니다. 도구는 USB 기기 하나만 대상으로 `com.cctv.iptime` APK만 읽습니다. APK와 결과는 `verification/current/android-app`에 보관하고 실행·배포하지 않습니다. `check.bat android`는 가상 ADB와 합성 APK만 사용합니다.

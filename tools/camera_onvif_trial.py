@@ -119,8 +119,10 @@ def continuous_menu(client, camera, delay):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description='카메라 ONVIF 회전 시험')
-    parser.add_argument('--probe', action='store_true', help='기능 조회만 수행. 이동·정지 요청 없음')
-    parser.add_argument('--continuous', action='store_true', help='반복 전송 없이 연속 이동 비교')
+    modes = parser.add_mutually_exclusive_group()
+    modes.add_argument('--probe', action='store_true', help='기능 조회만 수행. 이동·정지 요청 없음')
+    modes.add_argument('--continuous', action='store_true', help='반복 전송 없이 연속 이동 비교')
+    modes.add_argument('--compat', action='store_true', help='최소 요청·속도 0 정지 호환성 비교')
     parser.add_argument('--delay', type=int, default=3, help='이동 전 대기 시간, 0~300초 (기본 3초)')
     args = parser.parse_args(argv)
     if not 0 <= args.delay <= 300:
@@ -139,7 +141,11 @@ def main(argv=None):
     camera = next((c for c in cameras if str(c['number']) == number), None)
     if camera is None:
         return 0
-    client = Client(camera)
+    if args.compat:
+        from tools.camera_onvif_compat import CompatibilityClient
+        client = CompatibilityClient(camera)
+    else:
+        client = Client(camera)
     discovered = client.discover()
     results = previous_results()
     results.append({'camera_number': camera['number'], 'discovery': discovered})
@@ -149,6 +155,9 @@ def main(argv=None):
         return 1
     if args.continuous:
         return continuous_menu(client, camera, args.delay)
+    if args.compat:
+        from tools.camera_onvif_compat import menu
+        return menu(client, camera, args.delay, ROOT)
     paths = list(dict.fromkeys([client.ptz_path, '/onvif/ptz_service']))
     path_index = 0
     print('\n회전 제어 정보 확인 완료. 실제 렌즈를 보면서 시험하세요.')
