@@ -1,6 +1,6 @@
 # 개발 안내
 
-현재 빌드 대상은 **1.1.0**이며 공개 배포본은 **1.0.0**입니다. 릴리즈 검사를 마친 뒤 공개 여부를 정합니다.
+현재 로컬 릴리즈 빌드는 **1.1.0**이며 전체 QA/QC를 완료했습니다. GitHub 공개 배포본은 **1.0.0**이고 1.1.0 공개는 별도입니다.
 
 ## 환경과 빌드
 
@@ -102,9 +102,10 @@ APK 분석 상한은 파일당 512 MiB·ZIP 항목 30,000개·전체 원본 크�
 - PATH에서 실행 가능한 FFmpeg
 - `CAMFLOAT_QA_VIDEO`로 지정한 합성 영상. 소리 상태까지 검사하려면 음성 트랙을 넣고 `CAMFLOAT_QA_AUDIO=1`을 지정합니다.
 
-네트워크 검사는 `127.0.0.1:18554`에서 실행합니다. 재생·중단·복구·실제 영상 픽셀 갱신과 엔진 음량·음소거 값을 확인하며 결과는 `verification/current/network-qa.json`에 기록합니다.
+네트워크 검사는 배포와 같은 엔진을 쓰도록 `VLC_HOME`을 `vendor/vlc`로 지정하고 `127.0.0.1:18554`에서 실행합니다. 재생·중단·복구·실제 영상 픽셀 갱신과 엔진 음량·음소거 값을 확인하며 결과는 `verification/current/network-qa.json`에 기록합니다.
 
 ```powershell
+$env:VLC_HOME = Join-Path $PWD 'vendor/vlc'
 .\.venv\Scripts\python.exe tests/network_qa.py
 ```
 
