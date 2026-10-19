@@ -145,10 +145,39 @@ class DirectionPopupTests(unittest.TestCase):
             for _ in range(4):
                 QTest.mouseClick(panel.buttons['left'], Qt.MouseButton.LeftButton)
                 QTest.qWait(40)
-            self.assertEqual(move.call_count, count + 4)
+            # Separate clicks share a 500ms limit, including direction changes.
+            self.assertEqual(move.call_count, count + 1)
             QTest.qWait(250)
-            self.assertEqual(move.call_count, count + 4)
+            self.assertEqual(move.call_count, count + 1)
             self.assertFalse(panel.status.isVisible())
+
+    def test_hold_repeats_while_previous_replies_are_still_pending(self):
+        import threading
+        gate = threading.Event()
+        sent = []
+        def delayed(client, pan, tilt=0, *, attempt=None):
+            if attempt.cancelled.is_set() or not attempt.before_send():
+                return {'cancelled': True, 'request_sent': False}
+            attempt.on_event('write_started')
+            attempt.request_sent()
+            sent.append((pan, tilt))
+            gate.wait(1)
+            return {'request_sent': True, 'response_verified': True}
+        with patch.object(FakeClient, 'step', delayed):
+            panel = self.open_panel()
+            try:
+                QTest.mousePress(panel.buttons['right'], Qt.MouseButton.LeftButton)
+                QTest.qWait(400)
+                self.assertGreaterEqual(len(sent), 3)
+                self.assertTrue(self.window.direction_control.busy)
+                QTest.mouseRelease(panel.buttons['right'], Qt.MouseButton.LeftButton)
+                count = len(sent)
+                QTest.qWait(190)
+                self.assertEqual(len(sent), count)
+            finally:
+                gate.set()
+                self.assertTrue(self.window.direction_control.done.wait(2))
+                self.app.processEvents()
 
     def test_registration_commit_queries_new_connection_only(self):
         with patch.object(self.window.direction_control, 'discover') as query:

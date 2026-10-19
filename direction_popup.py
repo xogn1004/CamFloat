@@ -14,6 +14,8 @@ class DirectionPopup(QFrame):
         self.compact = True
         self.held_direction = None
         self.hold_timer = QTimer(self)
+        self.hold_timer.setSingleShot(True)
+        self.hold_timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.hold_timer.setInterval(160)
         self.hold_timer.timeout.connect(self.repeat_move)
         self.setObjectName('directionPopup')
@@ -94,6 +96,7 @@ class DirectionPopup(QFrame):
         if control.target != self.target:
             state = 'stopping'
         message = {'connecting': '조작 연결 중…', 'stopping': '잠시 기다려 주세요',
+                   'send_limit': '응답이 지연돼\n조작을 멈췄습니다',
                    'error': '조작 연결 실패\n닫고 다시 열어주세요',
                    'move_error': '카메라 연결을\n확인해 주세요',
                    'local_only': '내부망 카메라에서\n사용할 수 있습니다'}.get(state, '')
@@ -125,15 +128,16 @@ class DirectionPopup(QFrame):
         self.move(x, y)
         self.raise_()
 
-    def move_camera(self, pan, tilt):
+    def move_camera(self, pan, tilt, *, repeat=False):
         camera = self.overlay.host.camera_for_slot(self.overlay.index)
         if self.target == camera_key(camera):
-            self.control().move(camera, pan, tilt)
+            self.control().move(camera, pan, tilt, repeat=repeat)
             self.overlay.idle_timer.start()
 
     def start_move(self, pan, tilt):
         self.end_move()
         self.held_direction = (pan, tilt)
+        self.control().begin_input()
         self.move_camera(pan, tilt)
         if self.held_direction is not None and self.isVisible():
             self.hold_timer.start()
@@ -142,11 +146,17 @@ class DirectionPopup(QFrame):
         if self.held_direction is None or not self.isVisible():
             self.end_move()
             return
-        self.move_camera(*self.held_direction)
+        self.move_camera(*self.held_direction, repeat=True)
+        # Start from this actual turn, not from missed deadlines: no catch-up burst.
+        if self.held_direction is not None and self.isVisible():
+            self.hold_timer.start()
 
     def end_move(self):
         self.hold_timer.stop()
+        was_held = self.held_direction is not None
         self.held_direction = None
+        if was_held:
+            self.control().end_input()
 
     def eventFilter(self, watched, event):
         if event.type() in (QEvent.Type.Leave, QEvent.Type.Hide, QEvent.Type.UngrabMouse):

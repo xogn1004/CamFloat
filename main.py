@@ -34,7 +34,7 @@ from ptz_control import DirectionControl
 from ptz_metadata import validated as validated_control, binding as control_binding
 from direction_popup import DirectionPopup
 
-VERSION = '1.1.0-rc.1'
+VERSION = '1.1.0-rc.2'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -559,7 +559,7 @@ class PlayerWindow(QWidget):
         self.fullscreen_entry_layout = None
         self.save_error_reported = False
         self.tiles = []
-        self.direction_control = DirectionControl(self)
+        self.direction_control = DirectionControl(self, version=VERSION, diagnostics_enabled=persist)
         self.direction_control.metadata_ready.connect(self.store_control_metadata)
         self.setWindowTitle(APP_TITLE + (
             f' · {PROFILES[self.playback_profile]}' if self.playback_profile != 'auto' else ''))
@@ -848,6 +848,8 @@ class PlayerWindow(QWidget):
             self.hide()
             QTimer.singleShot(50, self.close)
             return
+        self.direction_control.flush_timer.stop()
+        self.direction_control.timing.flush()
         super().closeEvent(event)
         # We hid the window while stop() ran. Qt does not emit lastWindowClosed
         # for an already-hidden window, so explicitly finish the application.

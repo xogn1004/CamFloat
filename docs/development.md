@@ -1,6 +1,6 @@
 # 개발 안내
 
-현재 릴리즈 후보는 **1.1.0-rc.1**, 공개 배포본은 **1.0.0**입니다.
+현재 입력 비교 후보는 **1.1.0-rc.2**, 공개 배포본은 **1.0.0**입니다. 카메라의 실제 속도·잔여 이동 확인 전까지 정식 공개는 보류합니다.
 
 ## 환경과 빌드
 
@@ -27,7 +27,7 @@ cd CamFloat
 
 | 파일 | 역할 |
 | --- | --- |
-| `onvif_control.py`, `ptz_control.py`, `ptz_metadata.py`, `direction_popup.py` | 방향 조작·등록 시 제어 정보 조회/암호화 보관·길게 누르기 |
+| `onvif_control.py`, `ptz_control.py`, `ptz_metadata.py`, `direction_popup.py`, `ptz_transport.py`, `ptz_timing.py` | 방향 조작·제어 정보 보관·독립 응답 처리·취소/시간 제한·전송 간격 기록 |
 | `main.py`, `playback.py` | 화면 배정·확대·전체화면과 비동기 재생 작업 |
 | `chrome.py`, `native_window.py` | 상단 도구와 Windows 창·오버레이 처리 |
 | `camera_manager.py`, `camera_editor.py`, `camera_draft.py` | 관리 초안·최종 저장과 연결 정보 입력·검증 |
@@ -73,6 +73,8 @@ cd CamFloat
 별도의 실제 카메라 회전 시험은 `camera-control-test.bat`입니다. 일반 검사 명령에 포함되지 않으며 사용자가 대상을 선택하고 이동을 요청할 때만 조작합니다. Enter/R은 좌우·U/D는 상하 시험입니다. `--delay 10`으로 이동 전 대기 시간을 지정할 수 있고(0~300초, 기본 3초), `--probe`는 기능 조회만 수행합니다. 사용자 수동 시험에서 상하좌우 이동과 멈춤을 확인했습니다. 기기 반전 설정에 따라 방향이 달라질 수 있고, 명시적 정지와 기기 시간 제한의 효과는 아직 분리 검증하지 않았습니다. [지원 조사와 시험 방법](post-release-plan.md#후속-onvif-조사와-시험-도구)을 먼저 확인하세요.
 
 연속 이동 조사는 두 모드로 구분합니다. `camera-control-test.bat --continuous`는 기기 시간 제한 0.25초·1초·2초를 비교합니다. `camera-control-test.bat --compat`는 시간 제한·줌 항목을 생략한 최소 요청, 최소 `Stop`, 속도 0 정지, 좌표계 명시를 비교합니다. 후자는 이동 명령을 한 번 보내고 별도 스레드가 1초 뒤 정지를 요청합니다. 기기 시간 제한이 없으므로 렌즈를 직접 보며 시험하고, 멈추지 않으면 제조사 앱에서 멈춰야 합니다. `X`로 관찰 결과를 기록하면 추가 시험을 중단합니다. `1/2/3`은 방식 선택, `L/R/U/D`는 한 번 이동, `Q`는 종료입니다. 앱의 방향 패널에는 이 실험을 적용하지 않습니다. 기록은 로컬 `verification/current/camera-control/compat-manual-latest.json`에 보관합니다.
+
+rc.2 앱 입력은 클릭 500ms 제한·길게 누르기 160ms 목표 주기·응답 처리 분리·전체 요청 500ms 제한·동시 최대 4개를 사용합니다. 늦어진 명령을 몰아서 보내지 않고 해제 시 미전송 작업을 취소합니다. 손을 뗀 뒤 `%LOCALAPPDATA%/CamFloat/diagnostics/direction-timing.json`을 저장합니다. 실제 프로필 위치는 `CAMFLOAT_DATA_DIR`이 있으면 그 폴더입니다. `.venv/Scripts/python.exe -B -X utf8 tools/direction_timing.py`로 실제 간격·응답 시간·해제 뒤 쓰기 시작 건수를 확인합니다. 진단은 최대 1,500개 사건만 보존하며 주소·계정·이름·원문 응답은 넣지 않습니다.
 
 스피커 시험은 `camera-speaker-test.bat`입니다. 카메라 선택 후 대기·전송 시간을 입력하거나 `--delay 20 --duration 5`로 지정할 수 있습니다. 마이크·실제 녹음 파일 대신 작은 합성음을 사용합니다. `--probe`는 열기·닫기만 요청합니다. 일반 검사와 실제 카메라 청취 시험을 구분하며 [말하기 조사](post-release-plan.md#말하기-전송-경로-조사)를 참고하세요.
 

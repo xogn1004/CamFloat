@@ -104,16 +104,31 @@ class Client:
                         device_timeout_ms=device_timeout_ms)
 
     def call(self, path, namespace, operation, pan=None, on_sent=None, tilt=0, port=None, timeout=1,
-             *, device_timeout_ms=250):
+             *, device_timeout_ms=250, attempt=None):
         body = self.build_envelope(namespace, operation, pan, tilt, device_timeout_ms)
         connection = self.connection_factory(self.parts.hostname, port or (self.ptz_port if namespace == PTZ else 5000), timeout=timeout)
         result = {'operation': operation, 'response_verified': False, 'request_sent': False}
         root = None
         action = namespace + '/' + operation
         try:
-            connection.request('POST', path, body, {'Content-Type': 'application/soap+xml; charset=utf-8; action="' + action + '"',
-                                                   'SOAPAction': '"' + action + '"', 'Connection': 'close'})
+            if attempt is not None:
+                attempt.start(connection)
+                # Connect before the final cancellation gate. A delayed connect
+                # must not send an old command after release or a newer command.
+                connect = getattr(connection, 'connect', None)
+                if connect is not None:
+                    connect()
+                attempt.acquire_write(connection)
+                attempt.before_request(connection)
+            try:
+                connection.request('POST', path, body, {'Content-Type': 'application/soap+xml; charset=utf-8; action="' + action + '"',
+                                                       'SOAPAction': '"' + action + '"', 'Connection': 'close'})
+            finally:
+                if attempt is not None:
+                    attempt.release_write()
             result['request_sent'] = True
+            if attempt is not None:
+                attempt.request_sent()
             if on_sent:
                 on_sent()
             response = connection.getresponse()
@@ -131,6 +146,10 @@ class Client:
         except ERRORS as error:
             result['error'] = type(error).__name__
         finally:
+            if attempt is not None:
+                attempt.finish()
+                result['cancelled'] = (attempt.aborted or attempt.cancelled.is_set()) and not result['request_sent']
+                result['deadline_exceeded'] = attempt.expired.is_set()
             connection.close()
         return result, root
 
@@ -172,11 +191,12 @@ class Client:
             raise ValueError('Discovery required')
         return self.call(self.ptz_path, PTZ, operation, pan, on_sent, tilt=tilt)[0]
 
-    def step(self, pan, tilt=0):
+    def step(self, pan, tilt=0, *, attempt=None):
         """App motion: device timeout only; never wait for or send a Stop."""
         if not self.ptz_path or not self.profile_token or not direction_valid(pan, tilt):
             raise ValueError('Control metadata required')
-        return self.call(self.ptz_path, PTZ, 'ContinuousMove', pan=pan, tilt=tilt, timeout=.15)[0]
+        return self.call(self.ptz_path, PTZ, 'ContinuousMove', pan=pan, tilt=tilt,
+                         timeout=.15, attempt=attempt)[0]
 
 
 def pulse(client, pan, tilt=0, cancelled=None):

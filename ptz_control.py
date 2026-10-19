@@ -1,11 +1,14 @@
 """Nonblocking, one-shot direction commands for registered LAN cameras."""
 import ipaddress
 import threading
+import time
 from urllib.parse import urlsplit
 
-from PySide6.QtCore import QObject, Signal, Slot
+from PySide6.QtCore import QObject, QTimer, Signal, Slot
 from onvif_control import Client, direction_valid
 from ptz_metadata import defaults, from_client, validated
+from ptz_timing import DirectionTiming
+from ptz_transport import MotionAttempt
 
 
 def camera_key(camera):
@@ -41,12 +44,27 @@ class DirectionControl(QObject):
     metadata_ready = Signal(object, object)
     discovered = Signal(object, object)
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, version='', diagnostics_enabled=True, clock=time.monotonic):
         super().__init__(parent)
         self.target = None
         self.client = None
         self.state = 'idle'
-        self.busy = False
+        self.clock = clock
+        self.jobs_lock = threading.Lock()
+        self.write_lock = threading.Lock()
+        self.jobs = {}
+        self.sequence = 0
+        self.latest_applied = 0
+        self.latest_write = 0
+        self.last_click = {}
+        self.input_cancelled = threading.Event()
+        self.input_open = False
+        self.input_number = 0
+        self.timing = DirectionTiming(version, diagnostics_enabled, clock)
+        self.flush_timer = QTimer(self)
+        self.flush_timer.setSingleShot(True)
+        self.flush_timer.setInterval(100)
+        self.flush_timer.timeout.connect(self.timing.flush)
         self.closed = False
         self.revision = 0
         self.cancelled = threading.Event()
@@ -60,6 +78,26 @@ class DirectionControl(QObject):
         self.last_reply = None
         self.completed.connect(self.finish)
         self.discovered.connect(self.lookup_finished)
+
+    @property
+    def busy(self):
+        with self.jobs_lock:
+            return bool(self.jobs)
+
+    def begin_input(self):
+        self.end_input()
+        self.flush_timer.stop()
+        self.input_cancelled = threading.Event()
+        self.input_open = True
+        self.input_number += 1
+        self.timing.record('input_start', input=self.input_number)
+
+    def end_input(self):
+        self.input_cancelled.set()
+        if self.input_open:
+            self.input_open = False
+            self.timing.record('input_end', input=self.input_number)
+            self.flush_timer.start()
 
     def hints(self, camera):
         key = camera_key(camera)
@@ -123,8 +161,10 @@ class DirectionControl(QObject):
         self.next_lookup()
 
     def prepare(self, camera):
-        if self.closed or self.busy:
+        if self.closed:
             return False
+        self.end_input()
+        self.cancelled.set()
         self.revision += 1
         self.target = camera_key(camera)
         self.cancelled = threading.Event()
@@ -139,53 +179,109 @@ class DirectionControl(QObject):
         self.changed.emit()
         return True
 
-    def move(self, camera, pan, tilt):
-        if (self.closed or self.busy or self.state not in ('ready', 'move_error')
+    def move(self, camera, pan, tilt, *, repeat=False):
+        if (self.closed or self.state not in ('ready', 'moving', 'move_error', 'send_limit')
                 or camera_key(camera) != self.target or not eligible(camera)
                 or not direction_valid(pan, tilt)):
             return False
+        now = self.clock()
+        key = camera_key(camera)
+        if not repeat and now - self.last_click.get(key, float('-inf')) < .5:
+            self.timing.record('click_ignored', pan=pan, tilt=tilt)
+            return False
+        if repeat and (not self.input_open or self.input_cancelled.is_set()):
+            return False
+        if not self.input_open:
+            self.begin_input()
+        with self.jobs_lock:
+            at_limit = len(self.jobs) >= 4
+        if at_limit:
+            self.timing.record('request_limit', active=4)
+            self.end_input()
+            self.state = 'send_limit'
+            self.changed.emit()
+            return False
+        if not repeat:
+            self.last_click[key] = now
         client = self.make_client(camera)
         self.client = client
         cancelled = self.cancelled
+        input_cancelled = self.input_cancelled
         self.state = 'moving'
         connection = dict(camera)
-        def perform():
-            if cancelled.is_set():
-                return (client, 'ready', None, connection)
-            result = client.step(pan, tilt)
-            # Commands may execute even if the reply is late, absent or has
-            # an unexpected wrapper. Do not hide buttons or cancel a hold.
-            state = 'move_error' if delivery_failed(result) else 'ready'
-            return (client, state, result, connection)
-        self.launch(perform)
-        return True
-
-    def launch(self, operation):
-        self.busy = True
-        done = self.done = threading.Event()
         revision = self.revision
+        self.sequence += 1
+        sequence = self.sequence
+        started = self.clock()
+        number = camera.get('number')
+        number = number if type(number) is int else None
+        self.timing.record('dispatch', seq=sequence, input=self.input_number,
+                           camera=number, pan=pan, tilt=tilt, repeat=repeat)
+        def before_send():
+            with self.jobs_lock:
+                if (cancelled.is_set() or input_cancelled.is_set()
+                        or sequence < self.latest_write):
+                    self.timing.record('unsent_cancelled', seq=sequence)
+                    return False
+                self.latest_write = sequence
+                return True
+        attempt = MotionAttempt(input_cancelled, before_send,
+                                lambda event: self.timing.record(event, seq=sequence),
+                                write_lock=self.write_lock)
+        with self.jobs_lock:
+            self.jobs[sequence] = attempt
+            self.done.clear()
         def run():
-            result = (None, 'move_error', None, None)
+            response = None
             try:
-                result = operation()
+                if cancelled.is_set() or input_cancelled.is_set():
+                    response = {'cancelled': True, 'request_sent': False}
+                else:
+                    response = client.step(pan, tilt, attempt=attempt)
             except Exception:
-                pass  # Never expose a credential-bearing exception string.
+                response = {'response_verified': False, 'request_sent': attempt.sent}
             finally:
+                response = response or {'response_verified': False, 'request_sent': attempt.sent}
+                self.timing.record('reply', seq=sequence,
+                    duration_ms=round((self.clock() - started) * 1000, 3),
+                    sent=bool(response.get('request_sent')), verified=bool(response.get('response_verified')),
+                    cancelled=bool(response.get('cancelled')), deadline=bool(response.get('deadline_exceeded')),
+                    status=response.get('http_status') if type(response.get('http_status')) is int else None)
+                with self.jobs_lock:
+                    self.jobs.pop(sequence, None)
+                    if not self.jobs:
+                        self.done.set()
                 try:
-                    self.completed.emit(revision, result)
-                finally:
-                    done.set()
+                    self.completed.emit(revision, (sequence, input_cancelled, client, response, connection))
+                except RuntimeError:
+                    pass  # QObject may already be gone at process shutdown.
         threading.Thread(target=run, name='CamFloat direction', daemon=True).start()
         self.changed.emit()
+        return True
 
     @Slot(int, object)
     def finish(self, revision, result):
-        self.busy = False
+        if not self.input_open:
+            self.flush_timer.start()
         if self.closed:
             return
-        client, state, response, camera = result
+        sequence, input_cancelled, client, response, camera = result
+        if not self.busy and self.state in ('moving', 'send_limit'):
+            self.state = 'ready' if self.target is not None else 'idle'
+            self.changed.emit()
+        # Replies may finish out of order or belong to a closed panel/camera.
+        if revision != self.revision:
+            return
+        if sequence < self.latest_applied:
+            if not self.busy and self.state == 'moving':
+                self.state = 'ready'
+                self.changed.emit()
+            return
+        self.latest_applied = sequence
         self.last_reply = response
-        if camera and response:
+        current_input = input_cancelled is self.input_cancelled
+        failed = delivery_failed(response) and not response.get('cancelled')
+        if camera and response and current_input:
             key = camera_key(camera)
             if response.get('response_verified'):
                 info = from_client(client, camera)
@@ -193,21 +289,26 @@ class DirectionControl(QObject):
                     info['source'] = 'confirmed'
                     self.cache[key] = info
                     self.metadata_ready.emit(key, info)
-            elif state == 'move_error' and revision == self.revision:
+            elif failed and not input_cancelled.is_set():
                 self.discover(camera, force=True)
-        if revision == self.revision:
-            self.client, self.state = client, state
-        else:
-            self.client = None
-            self.state = 'idle'
+        # An old reply must not interrupt a new press or restart a limited hold.
+        if self.state == 'send_limit':
+            if not self.busy:
+                self.state = 'ready'
+        elif current_input:
+            self.client = client
+            self.state = 'move_error' if failed else 'moving' if self.busy else 'ready'
+        elif not self.busy and self.state == 'moving':
+            self.state = 'ready'
         self.changed.emit()
 
     def cancel(self):
+        self.end_input()
         self.revision += 1
         self.cancelled.set()
         self.target = None
         self.client = None
-        self.state = 'stopping' if self.busy else 'idle'
+        self.state = 'idle'
         # Cached metadata survives closing a panel. No Stop request is sent.
         self.changed.emit()
 
@@ -215,3 +316,4 @@ class DirectionControl(QObject):
         self.closed = True
         self.lookups.clear()
         self.cancel()
+        self.timing.flush()

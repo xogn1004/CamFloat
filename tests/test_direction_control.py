@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -32,8 +33,14 @@ class FakeClient:
             self.gate.wait(1)
         return {'profile_verified': True}
 
-    def step(self, pan, tilt=0):
+    def step(self, pan, tilt=0, *, attempt=None):
+        if attempt is not None:
+            if attempt.cancelled.is_set() or not attempt.before_send():
+                return {'cancelled': True, 'request_sent': False}
+            attempt.on_event('write_started')
         self.calls.append(('ContinuousMove', pan, tilt))
+        if attempt is not None:
+            attempt.request_sent()
         return {'response_verified': True, 'request_sent': True}
 
     def control(self, operation, pan=None, on_sent=None, tilt=0):
@@ -56,7 +63,8 @@ class DirectionControlTests(unittest.TestCase):
         FakeClient.gate = None
         self.patch = patch('ptz_control.Client', FakeClient)
         self.patch.start()
-        self.control = DirectionControl()
+        self.now = time.monotonic()
+        self.control = DirectionControl(clock=lambda: self.now, diagnostics_enabled=False)
 
     def tearDown(self):
         self.control.shutdown()
@@ -181,6 +189,7 @@ class DirectionControlTests(unittest.TestCase):
                          {'request_sent': True, 'response_verified': False, 'http_status': 200}):
             with self.subTest(response=response), patch.object(FakeClient, 'step', return_value=response) as move, \
                     patch.object(FakeClient, 'discover') as query:
+                self.now += 1
                 self.control.prepare(camera)
                 self.assertTrue(self.control.move(camera, 1, 0))
                 self.wait_state('ready')
