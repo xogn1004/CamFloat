@@ -165,7 +165,7 @@ class DirectionControlTests(unittest.TestCase):
 
     def test_reply_failure_refreshes_metadata_without_replaying_movement(self):
         camera = dict(self.camera, ptz=dict(defaults(self.camera), checked=True))
-        with patch.object(FakeClient, 'step', return_value={'request_sent': True, 'response_verified': False}) as move:
+        with patch.object(FakeClient, 'step', return_value={'request_sent': True, 'response_verified': False, 'soap_fault': True}) as move:
             self.control.prepare(camera)
             self.control.move(camera, 1, 0)
             self.wait_state('move_error')
@@ -173,6 +173,29 @@ class DirectionControlTests(unittest.TestCase):
             self.app.processEvents()
             self.assertEqual(move.call_count, 1)
             self.assertEqual(FakeClient.calls, [])
+
+    def test_sent_without_reply_remains_ready_and_never_queries_or_replays(self):
+        camera = dict(self.camera, ptz=dict(defaults(self.camera), checked=True))
+        for response in ({'request_sent': True, 'response_verified': False, 'error': 'TimeoutError'},
+                         {'request_sent': True, 'response_verified': False, 'error': 'RemoteDisconnected'},
+                         {'request_sent': True, 'response_verified': False, 'http_status': 200}):
+            with self.subTest(response=response), patch.object(FakeClient, 'step', return_value=response) as move, \
+                    patch.object(FakeClient, 'discover') as query:
+                self.control.prepare(camera)
+                self.assertTrue(self.control.move(camera, 1, 0))
+                self.wait_state('ready')
+                self.assertEqual(self.control.last_reply, response)
+                self.assertEqual(move.call_count, 1)
+                query.assert_not_called()
+                # An uncertain response must not be stored as verified support.
+                self.assertNotEqual(self.control.hints(camera)['source'], 'confirmed')
+
+    def test_unsent_or_explicitly_rejected_requests_are_still_failures(self):
+        from ptz_control import delivery_failed
+        for result in ({'request_sent': False, 'error': 'TimeoutError'},
+                       {'request_sent': True, 'http_status': 401},
+                       {'request_sent': True, 'http_status': 200, 'soap_fault': True}):
+            self.assertTrue(delivery_failed(result))
 
     def test_metadata_is_encrypted_in_settings_and_not_exported(self):
         camera = new_camera('Synthetic', self.camera['url'])

@@ -27,6 +27,14 @@ def eligible(camera):
         return False
 
 
+def delivery_failed(result):
+    """A missing acknowledgement is distinct from a rejected/unsent command."""
+    status = result.get('http_status')
+    return (result.get('soap_fault') is True
+            or (type(status) is int and status >= 400)
+            or (not result.get('request_sent') and not result.get('response_verified')))
+
+
 class DirectionControl(QObject):
     changed = Signal()
     completed = Signal(int, object)
@@ -49,6 +57,7 @@ class DirectionControl(QObject):
         self.cache = {}
         self.lookups = {}
         self.active_lookup = None
+        self.last_reply = None
         self.completed.connect(self.finish)
         self.discovered.connect(self.lookup_finished)
 
@@ -144,7 +153,9 @@ class DirectionControl(QObject):
             if cancelled.is_set():
                 return (client, 'ready', None, connection)
             result = client.step(pan, tilt)
-            state = 'ready' if result.get('response_verified') else 'move_error'
+            # Commands may execute even if the reply is late, absent or has
+            # an unexpected wrapper. Do not hide buttons or cancel a hold.
+            state = 'move_error' if delivery_failed(result) else 'ready'
             return (client, state, result, connection)
         self.launch(perform)
         return True
@@ -173,6 +184,7 @@ class DirectionControl(QObject):
         if self.closed:
             return
         client, state, response, camera = result
+        self.last_reply = response
         if camera and response:
             key = camera_key(camera)
             if response.get('response_verified'):
@@ -181,7 +193,7 @@ class DirectionControl(QObject):
                     info['source'] = 'confirmed'
                     self.cache[key] = info
                     self.metadata_ready.emit(key, info)
-            elif revision == self.revision:
+            elif state == 'move_error' and revision == self.revision:
                 self.discover(camera, force=True)
         if revision == self.revision:
             self.client, self.state = client, state

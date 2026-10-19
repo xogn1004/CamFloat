@@ -129,6 +129,27 @@ class DirectionPopupTests(unittest.TestCase):
         QTest.qWait(350)
         self.assertEqual(len(FakeClient.calls), count)
 
+    def test_missing_reply_does_not_replace_buttons_or_interrupt_hold_and_clicks(self):
+        with patch.object(FakeClient, 'step', return_value={
+                'request_sent': True, 'response_verified': False, 'error': 'TimeoutError'}) as move:
+            panel = self.open_panel()
+            QTest.mousePress(panel.buttons['right'], Qt.MouseButton.LeftButton)
+            QTest.qWait(550)
+            self.assertTrue(panel.hold_timer.isActive())
+            self.assertGreaterEqual(move.call_count, 3)
+            self.assertFalse(panel.status.isVisible())
+            self.assertTrue(all(b.isVisible() and b.isEnabled() for b in panel.buttons.values()))
+            QTest.mouseRelease(panel.buttons['right'], Qt.MouseButton.LeftButton)
+            QTest.qWait(50)
+            count = move.call_count
+            for _ in range(4):
+                QTest.mouseClick(panel.buttons['left'], Qt.MouseButton.LeftButton)
+                QTest.qWait(40)
+            self.assertEqual(move.call_count, count + 4)
+            QTest.qWait(250)
+            self.assertEqual(move.call_count, count + 4)
+            self.assertFalse(panel.status.isVisible())
+
     def test_registration_commit_queries_new_connection_only(self):
         with patch.object(self.window.direction_control, 'discover') as query:
             cameras = [dict(c) for c in self.window.config['cameras']]

@@ -95,7 +95,7 @@ class DirectionPopup(QFrame):
             state = 'stopping'
         message = {'connecting': '조작 연결 중…', 'stopping': '잠시 기다려 주세요',
                    'error': '조작 연결 실패\n닫고 다시 열어주세요',
-                   'move_error': '이동 응답을\n확인하지 못했습니다',
+                   'move_error': '카메라 연결을\n확인해 주세요',
                    'local_only': '내부망 카메라에서\n사용할 수 있습니다'}.get(state, '')
         self.status.setText(message)
         if message:
