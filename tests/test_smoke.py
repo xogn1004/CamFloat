@@ -8,11 +8,11 @@ from unittest.mock import patch
 
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
-from camera_archive import decode, encode
-from camera_draft import split_address_port
-from camera_model import (data_path, default_config, find_vlc_directory, load_config,
+from camfloat.camera_archive import decode, encode
+from camfloat.camera_draft import split_address_port
+from camfloat.camera_model import (data_path, default_config, find_vlc_directory, load_config,
                           make_vlc_instance, new_camera, normalize, save_config)
-from main import PlayerWindow, VERSION
+from camfloat.main import PlayerWindow, VERSION
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,7 +44,7 @@ class QuickChecks(unittest.TestCase):
         self.assertEqual(split_address_port('example.com:15554', 554), ('example.com', 15554))
 
     def test_version_metadata_agrees(self):
-        tree = ast.parse((ROOT / 'version_info.txt').read_text(encoding='utf-8'))
+        tree = ast.parse((ROOT / 'packaging/version_info.txt').read_text(encoding='utf-8'))
         strings = {node.args[0].value: node.args[1].value for node in ast.walk(tree)
                    if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
                    and node.func.id == 'StringStruct'}

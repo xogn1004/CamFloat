@@ -18,7 +18,7 @@ from urllib.parse import unquote, urlsplit, urlunsplit
 from urllib.request import parse_http_list, parse_keqv_list
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path[:0] = [str(ROOT / 'src'), str(ROOT)]
 FORMATS = ('content_type', 'ptz_header', 'user_body', 'user_header', 'parameter_body')
 NETWORK_ERRORS = (OSError, ValueError, IndexError)
 
@@ -208,7 +208,7 @@ def pulse(camera, variant, direction, duration_ms=180, client_factory=Client):
 
 def load_cameras():
     # Read only: load_config() also repairs/migrates profiles and is unsuitable here.
-    from camera_model import normalize
+    from camfloat.camera_model import normalize
     folder = Path(os.environ.get('CAMFLOAT_DATA_DIR') or Path(os.environ['LOCALAPPDATA']) / 'CamFloat')
     stored = json.loads((folder / 'settings.json').read_text(encoding='utf-8-sig'))
     return eligible_cameras(normalize(stored, encrypted=True))

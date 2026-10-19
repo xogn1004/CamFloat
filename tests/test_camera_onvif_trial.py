@@ -231,7 +231,7 @@ class ONVIFTrialTests(unittest.TestCase):
         self.assertEqual(client.ptz_path, '/onvif/deviceio_service')
 
     def test_nat_advertisements_cannot_redirect_to_arbitrary_host_or_port(self):
-        from onvif_control import service_endpoint
+        from camfloat.onvif_control import service_endpoint
         host = str(ipaddress.IPv4Address(0x0a000007))
         self.assertEqual(service_endpoint(f'http://{host}:5000/custom/ptz', 'example.com',
             override_port=25554, allow_private_advertisement=True), ('/custom/ptz', 25554))

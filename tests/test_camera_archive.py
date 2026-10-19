@@ -6,8 +6,8 @@ import unittest
 from pathlib import Path
 
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-import camera_archive as archive
-from camera_model import new_camera
+from camfloat import camera_archive as archive
+from camfloat.camera_model import new_camera
 
 
 class ArchiveTests(unittest.TestCase):

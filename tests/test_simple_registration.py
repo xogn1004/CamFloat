@@ -5,11 +5,11 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import unquote, urlsplit
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtWidgets import QApplication, QDialog
-from camera_draft import split_address_port
-from camera_editor import CameraEditor
-from camera_model import new_camera
+from camfloat.camera_draft import split_address_port
+from camfloat.camera_editor import CameraEditor
+from camfloat.camera_model import new_camera
 
 
 class AddressTests(unittest.TestCase):
@@ -54,7 +54,7 @@ class SimpleRegistrationTests(unittest.TestCase):
         e = self.editor
         e.host.setText('127.0.0.1:18554')
         e.password.setText('test@:/!')
-        with patch('camera_editor.find_vlc_directory', return_value=Path('synthetic-engine')), \
+        with patch('camfloat.camera_editor.find_vlc_directory', return_value=Path('synthetic-engine')), \
                 patch.object(e.probe, 'start') as start:
             e.check.click()
         start.assert_called_once()
@@ -70,7 +70,7 @@ class SimpleRegistrationTests(unittest.TestCase):
             e = self.editor
             e.host.setText('127.0.0.1')
             e.port.setValue(port)
-            with patch('camera_editor.find_vlc_directory', return_value=Path('synthetic-engine')), \
+            with patch('camfloat.camera_editor.find_vlc_directory', return_value=Path('synthetic-engine')), \
                     patch.object(e.probe, 'start') as start:
                 e.check_connection()
             self.assertEqual(urlsplit(start.call_args.args[0]).port, port)
@@ -88,7 +88,7 @@ class SimpleRegistrationTests(unittest.TestCase):
         self.assertEqual(urlsplit(result['url']).port, 15554)
         e.mode.setCurrentIndex(0)
         self.assertEqual(e.collect()['control_port'], 25554)
-        from ptz_metadata import defaults
+        from camfloat.ptz_metadata import defaults
         e.camera = dict(result, ptz=dict(defaults(result), checked=True))
         e.control_port.setValue(25555)
         self.assertIsNone(e.collect()['ptz'])
@@ -116,7 +116,7 @@ class SimpleRegistrationTests(unittest.TestCase):
         e = self.editor
         e.host.setText('127.0.0.1:18554')
         e.quality.setCurrentText('SD')
-        with patch('camera_editor.find_vlc_directory', return_value=Path('synthetic-engine')), \
+        with patch('camfloat.camera_editor.find_vlc_directory', return_value=Path('synthetic-engine')), \
                 patch.object(e.probe, 'start') as start:
             e.check_connection()
         self.assertEqual(urlsplit(start.call_args.args[0]).port, 18554)

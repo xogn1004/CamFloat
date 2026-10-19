@@ -9,7 +9,7 @@ import threading
 import time
 import xml.etree.ElementTree as ET
 
-from onvif_control import Client, PTZ, SCHEMA, SOAP, direction_valid
+from camfloat.onvif_control import Client, PTZ, SCHEMA, SOAP, direction_valid
 
 
 VARIANTS = {

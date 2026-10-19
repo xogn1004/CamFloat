@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-import package_release
+from tools import package_release
 
 spec = importlib.util.spec_from_file_location('camfloat_check', Path(__file__).resolve().parents[1] / 'tools/check.py')
 check = importlib.util.module_from_spec(spec)
@@ -37,7 +37,8 @@ class CheckSelection(unittest.TestCase):
     def test_prerelease_packaging_rejects_published_folder_before_writes(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
-            (root / 'version_info.txt').write_text("StringStruct('ProductVersion', '1.0.1-dev.1')", encoding='utf-8')
+            (root / 'packaging').mkdir()
+            (root / 'packaging/version_info.txt').write_text("StringStruct('ProductVersion', '1.0.1-dev.1')", encoding='utf-8')
             with patch.object(package_release, 'ROOT', root), patch.object(package_release, 'RELEASE', root / 'release/CamFloat'):
                 with self.assertRaisesRegex(RuntimeError, '--staged'):
                     package_release.prepare()

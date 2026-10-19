@@ -5,16 +5,16 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'src'))
 from PySide6.QtCore import QUrl
 from PySide6.QtWidgets import QApplication
-from camera_model import default_config, find_vlc_directory, make_vlc_instance, new_camera
-from main import PlayerWindow, VERSION
+from camfloat.camera_model import default_config, find_vlc_directory, make_vlc_instance, new_camera
+from camfloat.main import PlayerWindow, VERSION
 
 app = QApplication([])
 instance = make_vlc_instance(find_vlc_directory())
 config = default_config()
-video = QUrl.fromLocalFile(str(ROOT / 'sample-test.mp4')).toString()
+video = QUrl.fromLocalFile(str(ROOT / 'tests/fixtures/sample-test.mp4')).toString()
 config['cameras'] = [new_camera(f'카메라 {i + 1}', video) for i in range(4)]
 for camera in config['cameras']:
     camera['muted'] = True

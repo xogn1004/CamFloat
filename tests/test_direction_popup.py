@@ -13,8 +13,8 @@ class DirectionPopupTests(unittest.TestCase):
     tearDownClass = classmethod(fixtures.WindowTests.tearDownClass.__func__)
 
     def setUp(self):
-        self.client_patch = patch('ptz_control.Client', FakeClient)
-        self.eligible_patch = patch('ptz_control.eligible', return_value=True)
+        self.client_patch = patch('camfloat.ptz_control.Client', FakeClient)
+        self.eligible_patch = patch('camfloat.ptz_control.eligible', return_value=True)
         self.client_patch.start()
         self.eligible_patch.start()
         FakeClient.calls = []
@@ -205,8 +205,8 @@ class DirectionPopupTests(unittest.TestCase):
         self.assertEqual(len(FakeClient.calls), count)
 
     def test_control_port_only_change_requeries_and_ignores_old_metadata(self):
-        from ptz_control import camera_key
-        from ptz_metadata import defaults
+        from camfloat.ptz_control import camera_key
+        from camfloat.ptz_metadata import defaults
         cameras = [dict(c) for c in self.window.config['cameras']]
         old = dict(cameras[0])
         cameras[0]['control_port'] = 25554

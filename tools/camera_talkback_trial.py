@@ -13,7 +13,7 @@ import time
 from urllib.parse import urlunsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path[:0] = [str(ROOT / 'src'), str(ROOT)]
 from tools.camera_ptz_trial import Client, load_cameras
 
 RATE = 8000

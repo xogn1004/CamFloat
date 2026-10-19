@@ -1,6 +1,6 @@
 # 개발 안내
 
-현재 개발본은 **1.1.1-dev.1**입니다. 로컬 릴리즈 빌드 **1.1.0**은 보존하며 전체 QA/QC를 완료했습니다. GitHub 공개 배포본은 **1.0.0**이고 1.1.0 공개는 별도입니다.
+현재 확인용 빌드는 **1.1.0**입니다. GitHub의 1.1.0 릴리즈는 최종 확인 전까지 초안으로 유지하며, 공개 배포본은 1.0.0입니다.
 
 ## 환경과 빌드
 
@@ -10,18 +10,35 @@ Windows x64와 Python 3.14를 사용합니다. PySide6·python-vlc 등 의존성
 git clone https://github.com/xogn1004/CamFloat.git
 cd CamFloat
 .\build.bat
-.\.venv\Scripts\python.exe package_release.py --staged --archive
+.\.venv\Scripts\python.exe tools/package_release.py --staged --archive
 ```
 
-`build.bat`은 가상 환경·의존성 설치, 공식 LGPL libVLC 패키지 다운로드·체크섬 확인, 아이콘 확인과 PyInstaller 빌드를 수행합니다. 사용자 제공 `camfloat.ico`가 있으면 그대로 사용합니다. PNG에서 다시 만들 때만 `make_icon.py --force`를 실행합니다. VLC를 별도로 설치할 필요가 없습니다. 개발·RC 버전은 자동으로 별도 빌드 경로에 보관하며, 정식 버전의 기본 결과는 `release/CamFloat/`입니다.
+`build.bat`은 가상 환경·의존성 설치, 공식 LGPL libVLC 패키지 다운로드·체크섬 확인, 아이콘 확인과 PyInstaller 빌드를 수행합니다. 사용자 제공 `assets/camfloat.ico`가 있으면 그대로 사용합니다. PNG에서 다시 만들 때만 `tools/make_icon.py --force`를 실행합니다. VLC를 별도로 설치할 필요가 없습니다. 개발·RC 버전은 자동으로 별도 빌드 경로에 보관하며, 정식 버전의 기본 결과는 `release/CamFloat/`입니다.
 
 앱을 실행 중이라면 `build.bat --staged`로 별도 빌드합니다. 실행할 개발본은 프로젝트의 `dist/CamFloat/CamFloat.exe`입니다. 버전별 폴더를 만들지 않고 이 경로에 최신 개발본 하나를 둡니다. Codex 등 패키지 앱 안에서는 AppData 경로가 탐색기에 보이는 경로와 다를 수 있으므로 실행 안내에는 프로젝트 경로를 사용합니다.
 
-빌드·패키징 작업용 파일은 `%LOCALAPPDATA%/CamFloatBuild/current`에 보관합니다. `package_release.py --staged --archive`는 그 안의 결과를 압축합니다. `dist/`는 Git·정식 릴리즈에 포함하지 않습니다.
+빌드·패키징 작업용 파일은 `%LOCALAPPDATA%/CamFloatBuild/current`에 보관합니다. `tools/package_release.py --staged --archive`는 그 안의 결과를 압축합니다. `dist/`는 Git·정식 릴리즈에 포함하지 않습니다.
 
 - 배포 ZIP에는 EXE·런타임·라이선스·시작 안내만 넣습니다.
 - `release/`에는 최신 실행 폴더·ZIP·체크섬만 보관합니다. 외부 라이브러리 소스 자료는 `vendor/source-assets/`에 둡니다.
 - 사용하지 않는 Qt PDF·QML·가상 키보드·소프트웨어 OpenGL 부품은 제외합니다. 라이선스와 소스 제공은 [외부 라이브러리 안내](../THIRD_PARTY.md)를 따릅니다.
+
+## 폴더 구성
+
+| 위치 | 용도 |
+| --- | --- |
+| `src/camfloat/` | 앱 코드 |
+| `assets/` | 앱 아이콘과 원본 이미지 |
+| `tools/` | 빌드·패키징·검사·수동 조사 도구 |
+| `packaging/` | PyInstaller 설정·실행 진입점·DLL 준비·Windows 버전 정보 |
+| `tests/` | 자동 검사. `fixtures/`의 합성 영상은 로컬 전용 |
+| `docs/` | 사용자·개발 안내와 검사 요약. 과거 조사는 `research/` |
+| `release/` | 사용자 배포 폴더·ZIP·체크섬 |
+| `dist/` | 개발 빌드가 있을 때만 사용하는 실행 폴더 |
+| `verification/` | 로컬 검사 결과. 배포·Git에서 제외 |
+| `vendor/` | 고정 버전 외부 라이브러리·라이선스 대응 소스. Git에서 제외 |
+
+`pip install --no-deps --no-build-isolation -e .`로 개발 패키지를 설치하면 `python -m camfloat`로 실행할 수 있습니다. `build.bat`은 이 준비를 포함합니다. 앱 모듈은 `camfloat.*`로 import하고 작업 폴더에 의존하지 않게 합니다. 아래 코드 파일명은 별도 표시가 없으면 `src/camfloat/` 기준입니다.
 
 ## 코드 구조
 
@@ -70,6 +87,7 @@ cd CamFloat
 | 등록·카메라 관리 | `check.bat cameras` |
 | 목록 파일 | `check.bat files` |
 | 분할·전체화면·도구 | `check.bat window` |
+| 시작 창·초기화·지연 로딩 | `check.bat startup` |
 | 첫 실행·바로가기 | `check.bat shortcuts` |
 | 방향 패널·작업 취소·카메라 대상·회전 프로토콜 (가상 기기로 검사) | `check.bat ptz` |
 | 스피커 시험 도구·시간 설정 (가상 기기로 검사) | `check.bat talkback` |
@@ -79,9 +97,9 @@ cd CamFloat
 
 검사에는 임시 설정 폴더와 합성 카메라·영상을 사용합니다. 실제 사용자 설정이나 카메라에 접속하지 않습니다. 결과와 로그는 `verification/current/checks/<영역>/latest.json`, `latest.log`에 덮어써 기록합니다. 실행 범위·개수·시간·생략 범위를 확인할 수 있습니다. 개별 테스트 모듈은 기존 unittest 명령으로도 실행할 수 있습니다.
 
-별도의 실제 카메라 회전 시험은 `camera-control-test.bat`입니다. 일반 검사 명령에 포함되지 않으며 사용자가 대상을 선택하고 이동을 요청할 때만 조작합니다. Enter/R은 좌우·U/D는 상하 시험입니다. `--delay 10`으로 이동 전 대기 시간을 지정할 수 있고(0~300초, 기본 3초), `--probe`는 기능 조회만 수행합니다. 사용자 수동 시험에서 상하좌우 이동과 멈춤을 확인했습니다. 기기 반전 설정에 따라 방향이 달라질 수 있고, 명시적 정지와 기기 시간 제한의 효과는 아직 분리 검증하지 않았습니다. [지원 조사와 시험 방법](post-release-plan.md#후속-onvif-조사와-시험-도구)을 먼저 확인하세요.
+별도의 실제 카메라 회전 시험은 `tools/camera-control-test.bat`입니다. 일반 검사 명령에 포함되지 않으며 사용자가 대상을 선택하고 이동을 요청할 때만 조작합니다. Enter/R은 좌우·U/D는 상하 시험입니다. `--delay 10`으로 이동 전 대기 시간을 지정할 수 있고(0~300초, 기본 3초), `--probe`는 기능 조회만 수행합니다. 사용자 수동 시험에서 상하좌우 이동과 멈춤을 확인했습니다. 기기 반전 설정에 따라 방향이 달라질 수 있고, 명시적 정지와 기기 시간 제한의 효과는 아직 분리 검증하지 않았습니다. [지원 조사와 시험 방법](research/camera-control.md#후속-onvif-조사와-시험-도구)을 먼저 확인하세요.
 
-연속 이동 조사는 두 모드로 구분합니다. `camera-control-test.bat --continuous`는 기기 시간 제한 0.25초·1초·2초를 비교합니다. `camera-control-test.bat --compat`는 시간 제한·줌 항목을 생략한 최소 요청, 최소 `Stop`, 속도 0 정지, 좌표계 명시를 비교합니다. 후자는 이동 명령을 한 번 보내고 별도 스레드가 1초 뒤 정지를 요청합니다. 기기 시간 제한이 없으므로 렌즈를 직접 보며 시험하고, 멈추지 않으면 제조사 앱에서 멈춰야 합니다. `X`로 관찰 결과를 기록하면 추가 시험을 중단합니다. `1/2/3`은 방식 선택, `L/R/U/D`는 한 번 이동, `Q`는 종료입니다. 앱의 방향 패널에는 이 실험을 적용하지 않습니다. 기록은 로컬 `verification/current/camera-control/compat-manual-latest.json`에 보관합니다.
+연속 이동 조사는 두 모드로 구분합니다. `tools/camera-control-test.bat --continuous`는 기기 시간 제한 0.25초·1초·2초를 비교합니다. `tools/camera-control-test.bat --compat`는 시간 제한·줌 항목을 생략한 최소 요청, 최소 `Stop`, 속도 0 정지, 좌표계 명시를 비교합니다. 후자는 이동 명령을 한 번 보내고 별도 스레드가 1초 뒤 정지를 요청합니다. 기기 시간 제한이 없으므로 렌즈를 직접 보며 시험하고, 멈추지 않으면 제조사 앱에서 멈춰야 합니다. `X`로 관찰 결과를 기록하면 추가 시험을 중단합니다. `1/2/3`은 방식 선택, `L/R/U/D`는 한 번 이동, `Q`는 종료입니다. 앱의 방향 패널에는 이 실험을 적용하지 않습니다. 기록은 로컬 `verification/current/camera-control/compat-manual-latest.json`에 보관합니다.
 
 현재 개발본은 첫 클릭을 즉시 전송하고 이후 클릭을 최대 5개 대기시켜 600ms마다 처리합니다. 길게 누르기는 기존 대기열을 먼저 처리한 뒤 600ms마다 반복하며, 손을 떼면 반복만 중단하고 이미 접수한 수동 클릭은 계속 처리합니다. 방향 변경·패널 닫기·앱 전환은 남은 요청을 취소합니다. 지연된 타이머를 몰아서 실행하지 않습니다. 통신·전체 요청 제한은 1000ms, 진행 중 자원 상한은 4개이며 응답 내용으로 버튼 상태·제어 정보·다음 이동을 변경하지 않습니다. 전송 실패를 자동 재시도하지 않습니다.
 
@@ -89,9 +107,9 @@ cd CamFloat
 
 입력 기록은 `%LOCALAPPDATA%/CamFloat/diagnostics/direction-timing.json`에 저장합니다. `CAMFLOAT_DATA_DIR`이 있으면 그 폴더를 사용합니다. `.venv/Scripts/python.exe -B -X utf8 tools/direction_timing.py`로 간격·응답 시간·해제 뒤 쓰기 시작 건수를 확인합니다. 해제 뒤 길게 누르기 쓰기와 접수한 클릭 대기열 처리를 구분합니다. 숫자 실패 단계는 연결 1·송신 순서 대기 2·최종 취소 검사 3·요청 쓰기 4·응답 헤더 5·응답 본문 6·SOAP 해석 7입니다. 최대 1,500개 사건만 보존하며 주소·계정·이름·원문 응답은 기록하지 않습니다.
 
-스피커 시험은 `camera-speaker-test.bat`입니다. 카메라 선택 후 대기·전송 시간을 입력하거나 `--delay 20 --duration 5`로 지정할 수 있습니다. 마이크·실제 녹음 파일 대신 작은 합성음을 사용합니다. `--probe`는 열기·닫기만 요청합니다. 일반 검사와 실제 카메라 청취 시험을 구분하며 [말하기 조사](post-release-plan.md#말하기-전송-경로-조사)를 참고하세요.
+스피커 시험은 `tools/camera-speaker-test.bat`입니다. 카메라 선택 후 대기·전송 시간을 입력하거나 `--delay 20 --duration 5`로 지정할 수 있습니다. 마이크·실제 녹음 파일 대신 작은 합성음을 사용합니다. `--probe`는 열기·닫기만 요청합니다. 일반 검사와 실제 카메라 청취 시험을 구분하며 [말하기 조사](research/camera-control.md#말하기-전송-경로-조사)를 참고하세요.
 
-Android 제조사 앱 조사 도구는 `android-app-check.bat`입니다. 공식 [Platform-Tools](https://developer.android.com/tools/releases/platform-tools)의 ADB·DLL을 `%LOCALAPPDATA%/CamFloatQA/android/platform-tools`에 준비하고, 휴대폰에서 USB 디버깅·PC 연결을 허용해야 합니다. 도구는 USB 기기 하나만 대상으로 `com.cctv.iptime` APK만 읽습니다. APK와 결과는 `verification/current/android-app`에 보관하고 실행·배포하지 않습니다. `check.bat android`는 가상 ADB와 합성 APK만 사용합니다.
+Android 제조사 앱 조사 도구는 `tools/android-app-check.bat`입니다. 공식 [Platform-Tools](https://developer.android.com/tools/releases/platform-tools)의 ADB·DLL을 `%LOCALAPPDATA%/CamFloatQA/android/platform-tools`에 준비하고, 휴대폰에서 USB 디버깅·PC 연결을 허용해야 합니다. 도구는 USB 기기 하나만 대상으로 `com.cctv.iptime` APK만 읽습니다. APK와 결과는 `verification/current/android-app`에 보관하고 실행·배포하지 않습니다. `check.bat android`는 가상 ADB와 합성 APK만 사용합니다.
 
 APK 분석 상한은 파일당 512 MiB·ZIP 항목 30,000개·전체 원본 크기 768 MiB입니다. 개별 DEX·라이브러리는 64 MiB까지만 읽습니다. 실제 USB 기기에서 약 339 MiB APK 수집을 확인했으며, SDK 표식은 기기 호환성의 확정 판정에 사용하지 않습니다. 수집 이후에는 휴대폰을 분리해도 로컬 파일로 분석을 계속할 수 있습니다.
 
@@ -143,7 +161,7 @@ $env:VLC_HOME = Join-Path $PWD 'vendor/vlc'
 | 다음 버전 개발 | `1.1.1-dev.1` |
 | 공개 직전 후보 | `1.1.0-rc.1` |
 
-같은 단계의 수정은 뒤 번호를 올립니다. 공개할 때는 접미사를 제거하고 `main.py`·`version_info.txt`·태그·배포 파일을 맞춥니다. 공개일은 `CHANGELOG.md`에서만 관리합니다.
+같은 단계의 수정은 뒤 번호를 올립니다. 공개할 때는 접미사를 제거하고 `src/camfloat/main.py`·`packaging/version_info.txt`·태그·배포 파일을 맞춥니다. 공개일은 `CHANGELOG.md`에서만 관리합니다.
 
 1. 기능별 확인을 마치고 전체 QC와 최종 압축 해제 EXE를 검사합니다.
 2. 소스·Git 이력의 민감 정보와 외부 라이브러리 고지·소스를 확인합니다.
@@ -161,4 +179,8 @@ $env:VLC_HOME = Join-Path $PWD 'vendor/vlc'
 
 접속 주소·토큰 패턴·개인 경로·문서 링크를 확인합니다. 모든 비밀 정보 탐지를 보장하는 검사는 아니며 앱 재생 검사와 별개입니다.
 
-문서만 변경해 실행 파일을 다시 만들지 않았다면 문서 커밋과 기존 실행 코드의 커밋을 구분해 기록합니다. 현재 후보의 결과는 [검토·검사 요약](../CODE_REVIEW.md), 남은 기능 검토는 [후속 개발 계획](post-release-plan.md)에 정리했습니다.
+문서만 변경해 실행 파일을 다시 만들지 않았다면 문서 커밋과 기존 실행 코드의 커밋을 구분해 기록합니다. 현재 후보의 결과는 [검토·검사 요약](code-review.md), 남은 기능 검토는 [후속 개발 계획](post-release-plan.md)에 정리했습니다.
+
+## 중간파일 정리
+
+`powershell -NoProfile -ExecutionPolicy Bypass -File tools/clean_intermediates.ps1 -Preview`로 삭제 목록을 확인합니다. 실행하려면 `-Preview`를 뺍니다. 명시한 옛 개발·RC 파일과 중간파일만 대상으로 하며, 현재 배포본·설정·소스·원본 이미지·조사 자료는 보존합니다. 실행 중인 개발본 폴더는 건너뜁니다. 자동 승인 검토에서 삭제 실행이 차단된 환경에서는 사용자가 직접 실행합니다.

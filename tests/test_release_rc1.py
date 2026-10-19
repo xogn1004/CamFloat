@@ -9,8 +9,8 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QSlider
 
 import test_app as fixtures
-from camera_model import normalize
-from native_window import taskbar_can_minimize, system_minimize
+from camfloat.camera_model import normalize
+from camfloat.native_window import taskbar_can_minimize, system_minimize
 
 
 class ReleaseRC1(unittest.TestCase):
@@ -67,11 +67,11 @@ class ReleaseRC1(unittest.TestCase):
             chrome.master_mute, chrome.manager, chrome.fullscreen, chrome.pin, chrome.more]
         self.assertEqual([b.x() for b in buttons], sorted(b.x() for b in buttons))
         self.assertTrue(all(b.geometry().right() < chrome.width() for b in buttons))
-        with patch('chrome.time.monotonic', return_value=100):
+        with patch('camfloat.chrome.time.monotonic', return_value=100):
             chrome.reveal()
         self.assertAlmostEqual(chrome.deadline, 101.6)
-        with patch('chrome.QCursor.pos', return_value=QPoint(-90000, -90000)), \
-                patch('chrome.time.monotonic', return_value=102):
+        with patch('camfloat.chrome.QCursor.pos', return_value=QPoint(-90000, -90000)), \
+                patch('camfloat.chrome.time.monotonic', return_value=102):
             chrome.poll()
         self.assertFalse(chrome.isVisible())
         self.window.mute_all()
@@ -124,7 +124,7 @@ class ReleaseRC1(unittest.TestCase):
         self.assertTrue(popup.hide_timer.isActive())
         self.app.sendEvent(popup, QEvent(QEvent.Type.Enter))
         self.assertFalse(popup.hide_timer.isActive())
-        with patch('volume_popup.QCursor.pos', return_value=QPoint(-90000, -90000)):
+        with patch('camfloat.volume_popup.QCursor.pos', return_value=QPoint(-90000, -90000)):
             popup.dismiss_if_outside()
         self.assertFalse(popup.isVisible())
 

@@ -7,7 +7,7 @@ from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from main import app_icon
+from camfloat.main import app_icon
 import test_app as fixtures
 
 

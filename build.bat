@@ -10,21 +10,23 @@ if not exist ".venv\Scripts\python.exe" (
 call ".venv\Scripts\python.exe" -m pip install -r requirements.txt
 if errorlevel 1 goto :failed
 
-call ".venv\Scripts\python.exe" prepare_vlc.py
+call ".venv\Scripts\python.exe" -m pip install --no-deps --no-build-isolation -e .
 if errorlevel 1 goto :failed
-call ".venv\Scripts\python.exe" make_icon.py
+call ".venv\Scripts\python.exe" tools\prepare_vlc.py
+if errorlevel 1 goto :failed
+call ".venv\Scripts\python.exe" tools\make_icon.py
 if errorlevel 1 goto :failed
 
 call ".venv\Scripts\python.exe" -m PyInstaller --noconfirm --clean ^
-  --distpath "%CAMFLOAT_STAGE%\dist" --workpath "%CAMFLOAT_STAGE%\work" CamFloat.spec
+  --distpath "%CAMFLOAT_STAGE%\dist" --workpath "%CAMFLOAT_STAGE%\work" packaging\CamFloat.spec
 if errorlevel 1 goto :failed
 
 if /i "%~1"=="--staged" goto :staged
-findstr /C:"-dev." /C:"-rc." version_info.txt >nul
+findstr /C:"-dev." /C:"-rc." packaging\version_info.txt >nul
 if not errorlevel 1 goto :staged
 robocopy "%CAMFLOAT_STAGE%\dist\CamFloat" "%~dp0release\CamFloat" /E /COPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS
 if errorlevel 8 goto :failed
-call ".venv\Scripts\python.exe" package_release.py
+call ".venv\Scripts\python.exe" tools\package_release.py
 if errorlevel 1 goto :failed
 
 echo.
@@ -33,7 +35,7 @@ echo The playback engine is included. No VLC installation is required.
 exit /b 0
 
 :staged
-call ".venv\Scripts\python.exe" package_release.py --staged
+call ".venv\Scripts\python.exe" tools\package_release.py --staged
 if errorlevel 1 goto :failed
 rem Publish one current development folder outside app-private AppData paths.
 robocopy "%CAMFLOAT_STAGE%\dist\CamFloat" "%~dp0dist\CamFloat" /E /COPY:DAT /R:2 /W:1 /NFL /NDL /NJH /NJS

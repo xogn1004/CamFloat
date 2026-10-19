@@ -5,6 +5,8 @@ RTSP 카메라를 **작고 깔끔한 창으로** 보는 Windows용 무료 플레
 
 **[다운로드](https://github.com/xogn1004/CamFloat/releases/latest)** · [사용 안내](docs/user-guide.md) · [변경 내역](CHANGELOG.md)
 
+공개 버전은 **1.0.0**입니다. **1.1.0은 최종 확인 중**이며 아직 공개되지 않았습니다.
+
 ## 주요 기능
 
 - **1·2·4분할** 동시 재생 · 2분할 좌우/상하 전환
@@ -16,7 +18,7 @@ RTSP 카메라를 **작고 깔끔한 창으로** 보는 Windows용 무료 플레
 
 ## 시작하기
 
-1. [Releases](https://github.com/xogn1004/CamFloat/releases/latest)에서 **`CamFloat-1.1.0-win-x64.zip`**을 내려받습니다.
+1. [Releases](https://github.com/xogn1004/CamFloat/releases/latest)에서 최신 Windows용 ZIP을 내려받습니다.
 2. 압축을 **모두 풀고** `CamFloat.exe`를 실행합니다.
 3. **카메라 관리 → 카메라 추가**에서 연결 정보를 입력하고 **추가**를 누릅니다.
 4. 관리창에서 **저장**을 누르면 재생을 시작합니다.
@@ -57,6 +59,6 @@ EXE에 코드 서명이 없어 Windows에서 **‘알 수 없는 게시자’** 
 
 ## 개발과 라이선스
 
-- [개발 안내](docs/development.md) · [검토·검사 요약](CODE_REVIEW.md) · [후속 개발 계획](docs/post-release-plan.md)
+- [개발 안내](docs/development.md) · [검토·검사 요약](docs/code-review.md) · [후속 개발 계획](docs/post-release-plan.md)
 - [보안 안내](SECURITY.md) · [외부 라이브러리 고지와 소스](THIRD_PARTY.md)
 - CamFloat 소스: **[MIT 라이선스](LICENSE)**. 포함된 외부 라이브러리는 각각의 라이선스를 따릅니다.

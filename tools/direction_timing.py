@@ -7,8 +7,8 @@ import statistics
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-from camera_model import data_path
+sys.path[:0] = [str(ROOT / 'src'), str(ROOT)]
+from camfloat.camera_model import data_path
 
 
 def summarize(document):

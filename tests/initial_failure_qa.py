@@ -7,11 +7,11 @@ import sys
 import time
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'src'))
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
-from camera_model import default_config, find_vlc_directory, make_vlc_instance, new_camera
-from main import PlayerWindow, VERSION
+from camfloat.camera_model import default_config, find_vlc_directory, make_vlc_instance, new_camera
+from camfloat.main import PlayerWindow, VERSION
 
 
 def wait_for(predicate, seconds):

@@ -18,11 +18,11 @@ from urllib.parse import unquote, urlsplit
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+sys.path[:0] = [str(ROOT / 'src'), str(ROOT)]
 from tools.camera_ptz_trial import load_cameras
 
 # Re-export the shared protocol API for existing manual tools and callers.
-from onvif_control import (SOAP, WSSE, WSU, PROFILE, ENCODING, DEVICE, MEDIA, PTZ,
+from camfloat.onvif_control import (SOAP, WSSE, WSU, PROFILE, ENCODING, DEVICE, MEDIA, PTZ,
     SCHEMA, READ_OPERATIONS, ALLOWED, ERRORS, element, direction_valid,
     envelope, service_path, Client, pulse)
 

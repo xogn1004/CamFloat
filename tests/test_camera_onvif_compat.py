@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import Mock, patch
 import xml.etree.ElementTree as ET
 
-from onvif_control import Client, PTZ, SCHEMA
+from camfloat.onvif_control import Client, PTZ, SCHEMA
 from tools import camera_onvif_compat as compat
 from tools import camera_onvif_trial as trial
 

@@ -45,7 +45,7 @@ def history_check():
             if kind not in (b'blob', b'commit', b'tag'):
                 continue
             if kind == b'blob' and b'\0' in data:
-                if not (path.endswith('.ico') or path == 'camfloat.png' or
+                if not (path.endswith('.ico') or path in ('camfloat.png', 'assets/camfloat.png') or
                         (path.startswith('docs/images/') and path.endswith('.png'))):
                     findings.append(dict(object=oid[:12], path=path, reason='unreviewed-binary'))
                 continue
@@ -82,6 +82,7 @@ def history_check():
                         continue  # Exact reviewed test fixtures, including rejected address classes.
                     if (path, address) in {('tests/test_regressions.py', '192.168.1.24'),
                                            ('dialogs.py', '192.168.0.10'),
+                                           ('src/camfloat/dialogs.py', '192.168.0.10'),
                                            ('tools/publication_check.py', '192.168.1.24'),
                                            ('tools/publication_check.py', '192.168.0.10')}:
                         continue  # Reviewed synthetic form-entry examples.
@@ -117,7 +118,7 @@ def document_check():
 
 
 def asset_check():
-    metadata = (ROOT / 'version_info.txt').read_text(encoding='utf-8')
+    metadata = (ROOT / 'packaging/version_info.txt').read_text(encoding='utf-8')
     version = re.search(r"StringStruct\('ProductVersion', '([\w.-]+)'\)", metadata)
     if not version:
         raise ValueError('Product version was not found.')
@@ -130,7 +131,7 @@ def asset_check():
             'CamFloat.exe', '_internal', 'licenses', '시작하기.txt']
         assert bundle.read('CamFloat/licenses/CamFloat-MIT.txt') == (ROOT / 'LICENSE').read_bytes()
         assert 'CamFloat/_internal/vlc/plugins/audio_output/libdirectsound_plugin.dll' in names
-        from package_release import UNUSED_QT_FILES
+        from tools.package_release import UNUSED_QT_FILES
         assert not any('CamFloat/_internal/PySide6/' + name in names for name in UNUSED_QT_FILES)
         assert not any(n.lower().endswith(('.camfloat', 'settings.json', '.mp4', '.wav', '.md', '.log')) for n in names)
         exe_hash = hashlib.sha256(bundle.read('CamFloat/CamFloat.exe')).hexdigest()
@@ -149,7 +150,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     # Importing packaging helpers must not require installing CamFloat's GUI.
     import sys
-    sys.path.insert(0, str(ROOT))
+    sys.path[:0] = [str(ROOT / 'src'), str(ROOT)]
     report = dict(history=history_check(), document_failures=document_check())
     if args.assets:
         report['assets'] = asset_check()

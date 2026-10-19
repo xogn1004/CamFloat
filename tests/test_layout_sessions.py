@@ -3,9 +3,9 @@ import json
 import unittest
 from unittest.mock import patch
 from PySide6.QtTest import QTest
-from camera_model import (default_config, ensure_layout_slots, fill_empty_slots, new_camera,
+from camfloat.camera_model import (default_config, ensure_layout_slots, fill_empty_slots, new_camera,
                           normalize, save_config, load_config)
-from dialogs import CameraManager
+from camfloat.dialogs import CameraManager
 import test_app as fixtures
 
 
@@ -33,15 +33,17 @@ class LayoutStorage(unittest.TestCase):
         ensure_layout_slots(config)
         config['cameras'][0]['enabled'] = False
         ensure_layout_slots(config)
-        for slots in config['layout_slots'].values():
+        for count, slots in config['layout_slots'].items():
             self.assertNotIn(ids[0], slots)
-            self.assertIsNone(slots[0])
+            if count != '1':
+                self.assertIsNone(slots[0])
+        self.assertEqual(config['layout_slots']['1'][0], ids[1])
         config['layout_slots']['4'][0] = ids[3]
         config['layout_slots']['4'][3] = None
         config['cameras'][0]['enabled'] = True
         fill_empty_slots(config, [ids[0]])
         self.assertEqual(config['layout_slots']['4'], [ids[3], ids[1], ids[2], ids[0]])
-        self.assertEqual(config['layout_slots']['1'][0], ids[0])
+        self.assertEqual(config['layout_slots']['1'][0], ids[1])
 
 
 class SessionRules(unittest.TestCase):
@@ -56,7 +58,7 @@ class SessionRules(unittest.TestCase):
         tile.initial_failed = False
         tile.worker.busy = False
         tile.attempt_started = 0
-        with patch.object(tile.player, 'get_state') as state, patch('main.time.monotonic', return_value=30):
+        with patch.object(tile.player, 'get_state') as state, patch('camfloat.main.time.monotonic', return_value=30):
             state.return_value.value = 7
             self.window.update_status()
             self.assertTrue(tile.initial_failed)
@@ -126,8 +128,10 @@ class SessionRules(unittest.TestCase):
         dialog.layout_choice.setCurrentIndex(dialog.layout_choice.findData(4))
         dialog.table.selectRow(0)
         dialog.toggle_enabled()
-        for slots in dialog.layout_slots.values():
-            self.assertEqual(slots[0], camera_id)
+        for count, slots in dialog.layout_slots.items():
+            if count != '1':
+                self.assertEqual(slots[0], camera_id)
+        self.assertNotEqual(dialog.layout_slots['1'][0], camera_id)
         dialog.move_camera(1)
         self.assertEqual(dialog.cameras[1]['number'], number)
         self.assertEqual(dialog.layout_slots['4'][0], camera_id)

@@ -3,7 +3,7 @@ import unittest
 from unittest.mock import patch
 from PySide6.QtCore import QRect
 from PySide6.QtTest import QTest
-from dialogs import CameraManager
+from camfloat.dialogs import CameraManager
 import test_app as fixtures
 
 
@@ -77,7 +77,7 @@ class ViewUI(unittest.TestCase):
         geometry = QRect(self.window.geometry())
         self.window.toggle_fullscreen(0)
         self.window.persist_enabled = True
-        with patch('main.save_config') as save:
+        with patch('camfloat.main.save_config') as save:
             self.window.persist()
             self.assertEqual(save.call_args.args[0]['geometry'],
                              [geometry.x(), geometry.y(), geometry.width(), geometry.height()])

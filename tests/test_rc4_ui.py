@@ -9,11 +9,11 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 import test_app as fixtures
-from camera_model import new_camera
-from camera_manager import CameraManager
-from camera_editor import CameraEditor
-from camera_archive import decode, encode
-from camera_transfer import ImportPreview
+from camfloat.camera_model import new_camera
+from camfloat.camera_manager import CameraManager
+from camfloat.camera_editor import CameraEditor
+from camfloat.camera_archive import decode, encode
+from camfloat.camera_transfer import ImportPreview
 
 
 class NoPromptConsent(QObject):
@@ -35,7 +35,7 @@ class DialogUI(unittest.TestCase):
         self.manager = CameraManager([self.camera])
         self.manager.show()
         QTest.qWait(25)
-        self.consent_patch = patch('privacy.ConsentRequest', NoPromptConsent)
+        self.consent_patch = patch('camfloat.privacy.ConsentRequest', NoPromptConsent)
         self.consent_patch.start()
 
     def tearDown(self):
@@ -94,7 +94,7 @@ class DialogUI(unittest.TestCase):
         before = self.manager.snapshot()
         with tempfile.TemporaryDirectory() as folder, patch.object(self.manager.privacy, 'authorize') as auth:
             path = Path(folder) / 'cameras.camfloat'
-            with patch('camera_manager.QFileDialog.getSaveFileName', return_value=(str(path), '')) as picker:
+            with patch('camfloat.camera_manager.QFileDialog.getSaveFileName', return_value=(str(path), '')) as picker:
                 self.manager.export_file()
                 self.assertTrue(auth.call_args.kwargs['required'])
                 picker.assert_not_called()
@@ -123,7 +123,7 @@ class DialogUI(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / 'import.camfloat'
             path.write_bytes(encode([self.camera, new]))
-            with patch('camera_manager.QFileDialog.getOpenFileName', return_value=(str(path), '')), patch('camera_manager.ImportPreview') as Preview:
+            with patch('camfloat.camera_manager.QFileDialog.getOpenFileName', return_value=(str(path), '')), patch('camfloat.camera_manager.ImportPreview') as Preview:
                 preview = Preview.return_value
                 preview.exec.return_value = QDialog.DialogCode.Rejected
                 self.manager.import_file()
@@ -181,7 +181,7 @@ class PlayerUI(unittest.TestCase):
         self.app.processEvents()
         button = overlay.choose
         # Simulate hover without moving the user's mouse or depending on an unlocked desktop.
-        with patch('hover_tips.QCursor.pos', return_value=button.mapToGlobal(button.rect().center())):
+        with patch('camfloat.hover_tips.QCursor.pos', return_value=button.mapToGlobal(button.rect().center())):
             overlay.tips.eventFilter(button, QEvent(QEvent.Type.Enter))
             QTest.qWait(700)
             self.assertTrue(overlay.tips.bubble.isVisible())
@@ -192,7 +192,7 @@ class PlayerUI(unittest.TestCase):
         self.window.chrome.panel.layout().activate()
         self.app.processEvents()
         button = self.window.chrome.manager
-        with patch('hover_tips.QCursor.pos', return_value=button.mapToGlobal(button.rect().center())):
+        with patch('camfloat.hover_tips.QCursor.pos', return_value=button.mapToGlobal(button.rect().center())):
             self.window.chrome.tips.eventFilter(button, QEvent(QEvent.Type.Enter))
             QTest.qWait(700)
             self.assertTrue(self.window.chrome.tips.bubble.isVisible())

@@ -15,7 +15,7 @@ PROFILES = {
     'audio': ('test_audio_isolation',),
     'cameras': ('test_simple_registration', 'test_camera_management'),
     'files': ('test_camera_archive',),
-    'window': ('test_layout_sessions', 'test_view_ui', 'test_chrome_gestures'),
+    'window': ('test_layout_sessions', 'test_view_ui', 'test_chrome_gestures', 'test_empty_screens'),
     'shortcuts': ('test_startup_shortcuts',),
     'startup': ('test_startup_timing',),
     'ptz': ('test_camera_ptz_trial', 'test_camera_onvif_trial', 'test_camera_onvif_compat',
@@ -57,7 +57,7 @@ def modules_for(groups):
 
 
 def source_version():
-    tree = ast.parse((ROOT / 'main.py').read_text(encoding='utf-8'))
+    tree = ast.parse((ROOT / 'src/camfloat/main.py').read_text(encoding='utf-8'))
     return next(node.value.value for node in tree.body if isinstance(node, ast.Assign)
                 and any(isinstance(target, ast.Name) and target.id == 'VERSION' for target in node.targets))
 
@@ -81,7 +81,7 @@ def main(argv=None):
         for group, description in DESCRIPTIONS.items():
             print(f'{group:10} {description}')
         return 0
-    sys.path[:0] = [str(ROOT / 'tests'), str(ROOT)]
+    sys.path[:0] = [str(ROOT / 'tests'), str(ROOT / 'src'), str(ROOT)]
     output = ROOT / 'verification/current/checks' / '+'.join(args.groups)
     output.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()

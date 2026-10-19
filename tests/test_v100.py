@@ -9,9 +9,9 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QPushButton, QToolButton
 
 import test_app as fixtures
-from camera_model import default_config, normalize, new_camera, reset_settings
-from camera_manager import CameraManager
-from camera_editor import CameraEditor
+from camfloat.camera_model import default_config, normalize, new_camera, reset_settings
+from camfloat.camera_manager import CameraManager
+from camfloat.camera_editor import CameraEditor
 
 
 class Defaults(unittest.TestCase):
@@ -85,10 +85,10 @@ class Dialogs(unittest.TestCase):
 
     def test_reset_is_draft_cancelable_and_callback_only_on_save(self):
         before = self.manager.snapshot()
-        with patch('camera_manager.confirm_action', return_value=False):
+        with patch('camfloat.camera_manager.confirm_action', return_value=False):
             self.manager.reset_preferences()
         self.assertEqual(before, self.manager.snapshot())
-        with patch('camera_manager.confirm_action', return_value=True):
+        with patch('camfloat.camera_manager.confirm_action', return_value=True):
             self.manager.reset_preferences()
         self.assertTrue(self.manager.settings_reset)
         self.assertEqual(len(self.manager.cameras), 1)
@@ -137,7 +137,8 @@ class Player(unittest.TestCase):
         w = self.window
         camera = w.camera_for_slot(0)
         camera['muted'] = False
-        with patch('main.icon', wraps=__import__('icons').icon) as icons:
+        from camfloat.icons import icon
+        with patch('camfloat.main.icon', wraps=icon) as icons:
             w.set_volume(0, 0)
             self.assertIn('muted', [c.args[0] for c in icons.call_args_list])
             icons.reset_mock()
@@ -185,7 +186,7 @@ class Player(unittest.TestCase):
         config = reset_settings(w.config['cameras'])
         w.persist_enabled = True
         try:
-            with patch('main.save_config', side_effect=OSError('synthetic failure')):
+            with patch('camfloat.main.save_config', side_effect=OSError('synthetic failure')):
                 self.assertFalse(w.commit_camera_draft(config['cameras'], config['layout_slots'], True, reset=True))
             self.assertEqual(w.config, before)
         finally:

@@ -13,9 +13,9 @@ from unittest.mock import patch
 from PySide6.QtTest import QTest
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QWidget
-from startup_timing import StartupTiming
-from camera_model import default_config
-from startup_window import LoadingWindow, initialize_engine
+from camfloat.startup_timing import StartupTiming
+from camfloat.camera_model import default_config
+from camfloat.startup_window import LoadingWindow, initialize_engine
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -120,12 +120,13 @@ class StartupChecks(unittest.TestCase):
 
     def test_main_does_not_load_management_or_network_protocol(self):
         code = '''
-import main, sys
+from camfloat import main
+import sys
 assert not any(name in sys.modules for name in
-               ('dialogs', 'camera_manager', 'camera_editor', 'cryptography', 'onvif_control'))
-from dialogs import UsageDialog
-assert 'camera_manager' not in sys.modules and 'camera_editor' not in sys.modules
-from dialogs import CameraManager, CameraEditor
+               ('camfloat.dialogs', 'camfloat.camera_manager', 'camfloat.camera_editor', 'cryptography', 'camfloat.onvif_control'))
+from camfloat.dialogs import UsageDialog
+assert 'camfloat.camera_manager' not in sys.modules and 'camfloat.camera_editor' not in sys.modules
+from camfloat.dialogs import CameraManager, CameraEditor
 assert CameraManager.__name__ == 'CameraManager' and CameraEditor.__name__ == 'CameraEditor'
 '''
         result = subprocess.run([sys.executable, '-B', '-c', code], cwd=ROOT,
@@ -133,8 +134,8 @@ assert CameraManager.__name__ == 'CameraManager' and CameraEditor.__name__ == 'C
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_protocol_factory_still_returns_real_client_when_requested(self):
-        import ptz_control
-        with patch('onvif_control.Client') as client:
+        from camfloat import ptz_control
+        with patch('camfloat.onvif_control.Client') as client:
             self.assertIs(ptz_control.Client({'url': 'synthetic'}), client.return_value)
             client.assert_called_once_with({'url': 'synthetic'})
         self.assertTrue(ptz_control.direction_valid(-1, 0))
@@ -170,7 +171,7 @@ assert CameraManager.__name__ == 'CameraManager' and CameraEditor.__name__ == 'C
 
     def test_read_only_diagnostics_does_not_block_startup(self):
         timing = StartupTiming()
-        with patch('camera_model.data_path', side_effect=PermissionError):
+        with patch('camfloat.camera_model.data_path', side_effect=PermissionError):
             timing.finish()
         self.assertTrue(timing.finished)
 

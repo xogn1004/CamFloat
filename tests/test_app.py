@@ -7,15 +7,15 @@ import unittest
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'src'))
 from PySide6.QtCore import QPoint, QRect, Qt, QUrl
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog
-from camera_model import (build_url, crypt, data_path, default_config, find_vlc_directory,
+from camfloat.camera_model import (build_url, crypt, data_path, default_config, find_vlc_directory,
     load_config, make_vlc_instance, new_camera, normalize, save_config, stream_url_for_quality)
-from dialogs import CameraEditor, CameraManager
-from main import PlayerWindow
-from native_window import is_topmost
+from camfloat.dialogs import CameraEditor, CameraManager
+from camfloat.main import PlayerWindow
+from camfloat.native_window import is_topmost
 
 
 class ModelTests(unittest.TestCase):
@@ -62,7 +62,7 @@ class WindowTests(unittest.TestCase):
     def setUpClass(cls):
         cls.app = QApplication.instance() or QApplication([])
         cls.instance = make_vlc_instance(find_vlc_directory())
-        sample = Path(__file__).resolve().parents[1] / 'sample-test.mp4'
+        sample = Path(__file__).resolve().parents[1] / 'tests/fixtures/sample-test.mp4'
         cls.video = QUrl.fromLocalFile(str(sample)).toString()
 
     @classmethod

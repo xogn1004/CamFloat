@@ -10,9 +10,9 @@ from unittest.mock import Mock, patch
 
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QDialog
-from camera_model import default_config, load_config, normalize, reset_settings, save_config
-from startup_shortcuts import ShortcutDialog, maybe_offer_shortcuts, offer_shortcuts
-from windows_shortcuts import create_shortcut, shortcut_target, PropertyKey, PropVariant, TaskbarPinning
+from camfloat.camera_model import default_config, load_config, normalize, reset_settings, save_config
+from camfloat.startup_shortcuts import ShortcutDialog, maybe_offer_shortcuts, offer_shortcuts
+from camfloat.windows_shortcuts import create_shortcut, shortcut_target, PropertyKey, PropVariant, TaskbarPinning
 
 
 class ShortcutTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class ShortcutTests(unittest.TestCase):
             config = load_config()
             self.assertFalse(config['shortcuts_prompted'])
             owner = SimpleNamespace(config=config, modal=nullcontext, persist=Mock())
-            with patch('startup_shortcuts.offer_shortcuts') as offer:
+            with patch('camfloat.startup_shortcuts.offer_shortcuts') as offer:
                 self.assertTrue(maybe_offer_shortcuts(owner))
                 self.assertFalse(maybe_offer_shortcuts(owner))
                 offer.assert_called_once_with(owner)
@@ -90,7 +90,7 @@ class ShortcutTests(unittest.TestCase):
 
     def test_permission_error_is_nonfatal_and_never_retries_with_elevation(self):
         dialog = ShortcutDialog(None, self.executable, self.desktop, self.taskbar)
-        with patch('startup_shortcuts.create_shortcut', side_effect=PermissionError) as create:
+        with patch('camfloat.startup_shortcuts.create_shortcut', side_effect=PermissionError) as create:
             dialog.create()
             create.assert_called_once()
         self.assertFalse(dialog.apply.isEnabled())
@@ -98,13 +98,13 @@ class ShortcutTests(unittest.TestCase):
         self.assertFalse(self.desktop.exists())
         dialog.deleteLater()
         owner = SimpleNamespace(config=default_config(), modal=nullcontext, persist=Mock())
-        with patch('startup_shortcuts.offer_shortcuts', side_effect=PermissionError):
+        with patch('camfloat.startup_shortcuts.offer_shortcuts', side_effect=PermissionError):
             maybe_offer_shortcuts(owner)
         self.assertTrue(owner.config['shortcuts_prompted'])
 
     def test_unavailable_taskbar_is_disabled_and_existing_desktop_is_preserved(self):
         pinning = SimpleNamespace(available=True, begin=Mock())
-        with patch('windows_shortcuts.QEventLoop'):
+        with patch('camfloat.windows_shortcuts.QEventLoop'):
             self.assertIsNone(TaskbarPinning.is_pinned(pinning))
         self.desktop.parent.mkdir()
         self.desktop.write_bytes(b'existing user file')
@@ -116,9 +116,9 @@ class ShortcutTests(unittest.TestCase):
         dialog.deleteLater()
         fake = Mock(available=False)
         fake.is_pinned.return_value = None
-        with patch('startup_shortcuts.TaskbarPinning', return_value=fake), \
-                patch('startup_shortcuts.desktop_shortcut', return_value=self.desktop), \
-                patch('startup_shortcuts.ShortcutDialog') as dialog_class:
+        with patch('camfloat.startup_shortcuts.TaskbarPinning', return_value=fake), \
+                patch('camfloat.startup_shortcuts.desktop_shortcut', return_value=self.desktop), \
+                patch('camfloat.startup_shortcuts.ShortcutDialog') as dialog_class:
             offer_shortcuts(None, self.executable)
             dialog_class.assert_not_called()
         self.assertEqual(self.desktop.read_bytes(), b'existing user file')

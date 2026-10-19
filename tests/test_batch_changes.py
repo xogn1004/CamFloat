@@ -6,7 +6,7 @@ from PySide6.QtCore import QRect
 from PySide6.QtTest import QTest
 
 import test_app as fixtures
-from menu_labels import CAMERAS, TOPMOST, LAYOUT, OPACITY
+from camfloat.menu_labels import CAMERAS, TOPMOST, LAYOUT, OPACITY
 
 
 class BatchChanges(unittest.TestCase):

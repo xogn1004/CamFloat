@@ -13,9 +13,9 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QDialog, QLabel, QPushButton, QWidget
 
 import test_app as fixtures
-from camera_model import new_camera
-from dialogs import CameraEditor, CameraManager
-from ptz_metadata import defaults, support_state
+from camfloat.camera_model import new_camera
+from camfloat.dialogs import CameraEditor, CameraManager
+from camfloat.ptz_metadata import defaults, support_state
 from test_direction_control import FakeClient
 
 
@@ -132,7 +132,7 @@ class ManagementEntry(unittest.TestCase):
         gate = threading.Event()
         FakeClient.calls = []
         FakeClient.gate = gate
-        with patch('ptz_control.Client', FakeClient):
+        with patch('camfloat.ptz_control.Client', FakeClient):
             manager = CameraManager([camera])
             self.assertEqual(manager.model.data(manager.model.index(0, 3)), '미확인')
             baseline = manager.snapshot()
@@ -161,7 +161,7 @@ class ManagementEntry(unittest.TestCase):
     def test_failed_lookup_is_unknown_and_new_entry_retries(self):
         camera = dict(self.camera, url=f'rtsp://user:synthetic@{str(ipaddress.IPv4Address(0x0a000007))}/onvif1')
         camera['ptz'] = dict(defaults(camera), checked=True, source='device')
-        with patch('ptz_control.Client', FakeClient), patch.object(FakeClient, 'discover', return_value={'profile_verified': False}) as query:
+        with patch('camfloat.ptz_control.Client', FakeClient), patch.object(FakeClient, 'discover', return_value={'profile_verified': False}) as query:
             for expected in (1, 2):
                 manager = CameraManager([camera])
                 manager.show()
@@ -182,7 +182,7 @@ class ManagementEntry(unittest.TestCase):
         host = QWidget()
         host.direction_control = SimpleNamespace(manager_checked=set(), cache={})
         FakeClient.gate = None
-        with patch('ptz_control.Client', FakeClient), patch.object(FakeClient, 'discover', return_value={'profile_verified': True}) as query:
+        with patch('camfloat.ptz_control.Client', FakeClient), patch.object(FakeClient, 'discover', return_value={'profile_verified': True}) as query:
             for expected in (1, 1):
                 manager = CameraManager([camera], host)
                 manager.show()
@@ -285,7 +285,7 @@ class ManagementEntry(unittest.TestCase):
         manager.show()
         QTest.qWait(35)
         field = manager.details['password']
-        with patch('privacy.ConsentRequest', FakeConsent), patch('privacy.app_is_foreground', return_value=True):
+        with patch('camfloat.privacy.ConsentRequest', FakeConsent), patch('camfloat.privacy.app_is_foreground', return_value=True):
             field.toggle()
             self.assertIsNotNone(manager.privacy.request)
             self.assertFalse(field.revealed)
@@ -308,7 +308,7 @@ class ManagementEntry(unittest.TestCase):
         manager = CameraManager([self.camera])
         manager.show()
         QTest.qWait(35)
-        with patch('privacy.secure_clipboard') as clipboard, patch('privacy.ConsentRequest') as consent:
+        with patch('camfloat.privacy.secure_clipboard') as clipboard, patch('camfloat.privacy.ConsentRequest') as consent:
             for key, expected in [('host', '127.0.0.1:8554'), ('username', 'viewer')]:
                 field = manager.details[key]
                 self.assertIs(field.copy_button.parentWidget(), field.edit)
@@ -332,7 +332,7 @@ class ManagementEntry(unittest.TestCase):
         self.assertLess(editor.height(), simple_height)
         editor.advanced.setChecked(True)
         self.assertGreater(editor.height(), simple_height)
-        with patch('privacy.secure_clipboard') as clipboard:
+        with patch('camfloat.privacy.secure_clipboard') as clipboard:
             for field in (manager.details['password'], manager.details['url'], editor.fields['password'], editor.fields['full_url']):
                 with patch.object(field.controller, 'authorize') as authorize:
                     field.copy_button.click()

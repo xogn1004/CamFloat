@@ -10,13 +10,13 @@ from unittest.mock import patch
 from PySide6.QtCore import QRect
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QDialog
-from camera_model import (LOAD_WARNINGS, build_url, camera_url, crypt, data_path, default_config,
+from camfloat.camera_model import (LOAD_WARNINGS, build_url, camera_url, crypt, data_path, default_config,
     load_config, new_camera, normalize, redact, save_config, supports_quality, validate_rtsp_url)
-from dialogs import CameraEditor, CameraManager
-from playback import PlaybackWorker
+from camfloat.dialogs import CameraEditor, CameraManager
+from camfloat.playback import PlaybackWorker
 import test_app as fixtures
-from single_instance import InstanceGuard
-from main import demo_video_url
+from camfloat.single_instance import InstanceGuard
+from camfloat.main import demo_video_url
 import tempfile
 import os
 
@@ -62,7 +62,7 @@ class StorageRegressions(unittest.TestCase):
         config = default_config()
         save_config(config)
         original = data_path().read_bytes()
-        with patch('camera_model.os.replace', side_effect=PermissionError('test')):
+        with patch('camfloat.camera_model.os.replace', side_effect=PermissionError('test')):
             with self.assertRaises(PermissionError):
                 save_config(dict(config, opacity=50))
         self.assertEqual(data_path().read_bytes(), original)
@@ -111,9 +111,9 @@ class StorageRegressions(unittest.TestCase):
             self.assertNotIn('private@', path.read_text(encoding='utf-8'))
 
     def test_demo_video_relative_path_resolves_to_absolute_file_url(self):
-        url = demo_video_url('sample-test.mp4')
+        url = demo_video_url('tests/fixtures/sample-test.mp4')
         self.assertTrue(url.startswith('file:///'))
-        self.assertIn('/camfloat/sample-test.mp4', url.replace('\\', '/'))
+        self.assertIn('/camfloat/tests/fixtures/sample-test.mp4', url.replace('\\', '/'))
         with self.assertRaises(ValueError):
             demo_video_url('does-not-exist.mp4')
 
@@ -157,7 +157,7 @@ class UIRegressions(unittest.TestCase):
     def test_opening_timeout_backoff_and_hover_status(self):
         tile = self.window.tiles[0]
         # Deterministic virtual clock; real libVLC playback is exercised elsewhere.
-        with patch.object(tile.player, 'get_state') as state, patch('main.time.monotonic', return_value=100):
+        with patch.object(tile.player, 'get_state') as state, patch('camfloat.main.time.monotonic', return_value=100):
             state.return_value.value = 1
             tile.attempt_started = 80
             tile.ever_played = True
@@ -167,7 +167,7 @@ class UIRegressions(unittest.TestCase):
             tile.overlay.refresh()
             self.assertIn('재연결', tile.overlay.empty.text())
             self.assertFalse(tile.overlay.empty.isHidden())
-        with patch.object(tile.player, 'get_state') as state, patch('main.time.monotonic', return_value=103), patch.object(tile, 'start_attempt') as start:
+        with patch.object(tile.player, 'get_state') as state, patch('camfloat.main.time.monotonic', return_value=103), patch.object(tile, 'start_attempt') as start:
             state.return_value.value = 7
             self.window.update_status()
             start.assert_called_once()
@@ -280,7 +280,7 @@ class UIRegressions(unittest.TestCase):
         original = list(self.window.config['slots'])
         self.window.single_view(3)
         self.window.persist_enabled = True
-        with patch('main.save_config') as save:
+        with patch('camfloat.main.save_config') as save:
             self.window.persist()
             stored = save.call_args.args[0]
             self.assertEqual(stored['layout'], 4)

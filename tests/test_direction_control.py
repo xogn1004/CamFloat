@@ -11,11 +11,11 @@ from unittest.mock import patch
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from onvif_control import pulse
-from ptz_metadata import defaults, validated, binding
-from ptz_control import DirectionControl, eligible, camera_key
-from camera_model import default_config, new_camera, normalize, save_config, data_path
-from camera_archive import encode, decode
+from camfloat.onvif_control import pulse
+from camfloat.ptz_metadata import defaults, validated, binding
+from camfloat.ptz_control import DirectionControl, eligible, camera_key
+from camfloat.camera_model import default_config, new_camera, normalize, save_config, data_path
+from camfloat.camera_archive import encode, decode
 
 
 class FakeClient:
@@ -61,7 +61,7 @@ class DirectionControlTests(unittest.TestCase):
         self.camera = {'id': 'synthetic', 'url': f'rtsp://user:synthetic@{host}/onvif1'}
         FakeClient.calls = []
         FakeClient.gate = None
-        self.patch = patch('ptz_control.Client', FakeClient)
+        self.patch = patch('camfloat.ptz_control.Client', FakeClient)
         self.patch.start()
         self.now = time.monotonic()
         self.control = DirectionControl(clock=lambda: self.now, diagnostics_enabled=False)
@@ -205,7 +205,7 @@ class DirectionControlTests(unittest.TestCase):
                 self.assertNotEqual(self.control.hints(camera)['source'], 'confirmed')
 
     def test_unsent_or_explicitly_rejected_requests_are_still_failures(self):
-        from ptz_control import delivery_failed
+        from camfloat.ptz_control import delivery_failed
         for result in ({'request_sent': False, 'error': 'TimeoutError'},
                        {'request_sent': True, 'http_status': 401},
                        {'request_sent': True, 'http_status': 200, 'soap_fault': True}):

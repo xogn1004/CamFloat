@@ -12,12 +12,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = Path(os.environ.get('CAMFLOAT_QA_VIDEO') or ROOT / 'verification' / 'rtsp-keyframes-test.mp4')
-sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'src'))
 from PySide6.QtCore import QTimer
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
-from camera_model import default_config, find_vlc_directory, make_vlc_instance, new_camera
-from main import PlayerWindow, VERSION
+from camfloat.camera_model import default_config, find_vlc_directory, make_vlc_instance, new_camera
+from camfloat.main import PlayerWindow, VERSION
 
 
 class RTSPFixture:
@@ -108,7 +108,7 @@ ticks = []
 try:
     SOURCE.parent.mkdir(parents=True, exist_ok=True)
     if not SOURCE.exists():
-        subprocess.run(['ffmpeg', '-v', 'error', '-stream_loop', '-1', '-i', str(ROOT / 'sample-test.mp4'),
+        subprocess.run(['ffmpeg', '-v', 'error', '-stream_loop', '-1', '-i', str(ROOT / 'tests/fixtures/sample-test.mp4'),
                         '-t', '240', '-c:v', 'libx264', '-preset', 'ultrafast', '-tune', 'zerolatency',
                         '-r', '15', '-g', '15', '-keyint_min', '15', '-sc_threshold', '0',
                         '-x264-params', 'repeat-headers=1', '-c:a', 'aac', str(SOURCE)],

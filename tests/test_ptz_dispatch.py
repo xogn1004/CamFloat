@@ -10,11 +10,11 @@ from unittest.mock import patch
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from onvif_control import Client
-from ptz_control import DirectionControl
-from ptz_metadata import defaults
-from ptz_timing import DirectionTiming
-from ptz_transport import MotionAttempt
+from camfloat.onvif_control import Client
+from camfloat.ptz_control import DirectionControl
+from camfloat.ptz_metadata import defaults
+from camfloat.ptz_timing import DirectionTiming
+from camfloat.ptz_transport import MotionAttempt
 from test_direction_control import FakeClient
 
 
@@ -27,9 +27,9 @@ class DispatchTests(unittest.TestCase):
         self.now = 10.
         self.camera = {'id': 'synthetic', 'url': 'rtsp://user:secret@127.0.0.1/onvif1'}
         self.camera['ptz'] = dict(defaults(self.camera), checked=True)
-        self.patch = patch('ptz_control.Client', FakeClient)
+        self.patch = patch('camfloat.ptz_control.Client', FakeClient)
         self.patch.start()
-        self.eligible = patch('ptz_control.eligible', return_value=True)
+        self.eligible = patch('camfloat.ptz_control.eligible', return_value=True)
         self.eligible.start()
         FakeClient.calls = []
         self.control = DirectionControl(clock=lambda: self.now, diagnostics_enabled=False)
@@ -334,7 +334,7 @@ class TransportTests(unittest.TestCase):
                 serving.join(2)
 
     def test_timing_is_bounded_and_omits_connection_secrets(self):
-        with tempfile.TemporaryDirectory() as folder, patch('ptz_timing.data_path', return_value=Path(folder) / 'settings.json'):
+        with tempfile.TemporaryDirectory() as folder, patch('camfloat.ptz_timing.data_path', return_value=Path(folder) / 'settings.json'):
             timing = DirectionTiming('test-version')
             for i in range(2000):
                 timing.record('sent', seq=i, address='rtsp://user:secret@127.0.0.1', password='secret')

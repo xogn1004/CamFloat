@@ -6,7 +6,7 @@ dist*/
 /release/
 /releases/
 /verification/
-sample-test.mp4
+*.egg-info/
 .*-pid
 .*-process-id
 *.log
