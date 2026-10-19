@@ -5,10 +5,20 @@ import threading
 import time
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot, Qt
-from onvif_control import Client, direction_valid
 from ptz_metadata import defaults, from_client, validated, supported_target, control_port
 from ptz_timing import DirectionTiming
 from ptz_transport import MotionAttempt
+
+
+def Client(*args, **kwargs):
+    """Load the protocol implementation on first control use, not app launch."""
+    from onvif_control import Client as ProtocolClient
+    return ProtocolClient(*args, **kwargs)
+
+
+def direction_valid(pan, tilt):
+    from onvif_control import direction_valid as validate_direction
+    return validate_direction(pan, tilt)
 
 
 def camera_key(camera):

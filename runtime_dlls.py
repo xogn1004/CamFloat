@@ -2,6 +2,11 @@
 
 import os
 import sys
+import time
+
+# The first application runtime hook runs before main's heavy Qt imports.
+sys._camfloat_started_at = time.perf_counter()
+
 from pathlib import Path
 
 

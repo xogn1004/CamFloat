@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from startup_timing import StartupTiming
+
+STARTUP = StartupTiming()
+
 import json
 import copy
 import multiprocessing
@@ -17,7 +21,6 @@ from PySide6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel, QMenu
 from camera_model import (APP_NAME, APP_TITLE, LOAD_WARNINGS, camera_url, crypt, data_path, default_config, find_vlc_directory,
     ensure_layout_slots, fill_empty_slots, load_config, make_vlc_instance,
     new_camera, redact, save_config, supports_quality, camera_display_name)
-from dialogs import CameraManager, UsageDialog
 from native_window import (app_is_foreground, configure_app_identity, is_topmost, set_topmost,
                           taskbar_icon_state, ensure_taskbar_minimize, taskbar_can_minimize, system_minimize)
 from playback import PlaybackWorker
@@ -34,7 +37,9 @@ from ptz_control import DirectionControl, camera_key
 from ptz_metadata import validated as validated_control, binding as control_binding
 from direction_popup import DirectionPopup
 
-VERSION = '1.1.0'
+STARTUP.mark('imports_ready')
+
+VERSION = '1.1.1-dev.1'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -1035,6 +1040,7 @@ class PlayerWindow(QWidget):
             self.sync_overlays()
 
     def manage_cameras(self):
+        from camera_manager import CameraManager
         with self.modal():
             dialog = CameraManager(self.config['cameras'], self, layout_slots=self.config['layout_slots'],
                 layout=self.config['layout'], commit_callback=self.commit_camera_draft)
@@ -1263,6 +1269,7 @@ class PlayerWindow(QWidget):
         self.queue_save()
 
     def show_help(self):
+        from dialogs import UsageDialog
         with self.modal():
             dialog = UsageDialog(VERSION, PROFILES[self.playback_profile], self)
             dialog.setWindowIcon(self.windowIcon())
@@ -1455,6 +1462,7 @@ def main():
     app.setApplicationName(APP_NAME)
     app.setApplicationVersion(VERSION)
     app.setWindowIcon(app_icon())
+    STARTUP.mark('application_ready')
     try:
         profile = select_profile(sys.argv[1:], sys.executable)
     except ValueError as error:
@@ -1473,23 +1481,38 @@ def main():
                 QMessageBox.information(None, APP_NAME,
                     'CamFloat가 이미 실행 중입니다.\n기존 CamFloat를 종료한 뒤 이 호환 모드를 다시 실행하세요.')
             return 0
+    STARTUP.mark('instance_guard_ready')
+    try:
+        config = default_config() if checking or demo else load_config()
+    except Exception:
+        QMessageBox.critical(None, APP_NAME, '저장된 카메라 설정을 읽지 못했습니다. 기존 설정 파일을 확인하세요.')
+        if guard:
+            guard.release()
+        return 1
+    STARTUP.mark('settings_ready')
     folder = find_vlc_directory()
     if folder is None:
         QMessageBox.critical(None, APP_NAME, '재생 파일이 없습니다. CamFloat 압축을 모두 풀고 다시 실행하세요.')
         return 1
+    startup_window = None
     try:
-        instance = make_vlc_instance(folder, *instance_options(profile))
+        if checking or demo:
+            instance = make_vlc_instance(folder, *instance_options(profile))
+        else:
+            from startup_window import initialize_engine
+            instance, startup_window = initialize_engine(config,
+                lambda: make_vlc_instance(folder, *instance_options(profile)), STARTUP,
+                activation=guard.activated if guard else None)
+            if instance is None:  # Closed while native library initialization was running.
+                if guard:
+                    guard.release()
+                return 0
         if instance is None:
             raise RuntimeError('VLC 초기화 실패')
     except (OSError, RuntimeError, NameError):
         QMessageBox.critical(None, APP_NAME, '재생 엔진을 불러오지 못했습니다. CamFloat 압축을 새로 풀고 다시 실행하세요.')
         return 1
-    try:
-        config = default_config() if checking or demo else load_config()
-    except Exception:
-        QMessageBox.critical(None, APP_NAME, '저장된 카메라 설정을 읽지 못했습니다. 기존 설정 파일을 확인하세요.')
-        instance.release()
-        return 1
+    STARTUP.mark('engine_ready')
     if demo:
         position = sys.argv.index('--demo-video') + 1
         if position >= len(sys.argv):
@@ -1509,6 +1532,7 @@ def main():
         for camera in config['cameras']:
             camera['muted'] = True
     window = PlayerWindow(config, instance, persist=not (checking or demo))
+    STARTUP.mark('window_ready')
     app._camfloat_window = window
     diagnostics = None
     if not checking and not demo:
@@ -1524,7 +1548,15 @@ def main():
             pass
     if guard:
         guard.activated.connect(window.activate)
-    window.show()
+    STARTUP.watch(window, enabled=not (checking or demo))
+    if startup_window is not None and startup_window.isMinimized():
+        window.showMinimized()
+    else:
+        window.show()
+    if startup_window is not None:
+        startup_window.close()
+        startup_window.deleteLater()
+    STARTUP.mark('window_shown')
     if checking:
         verify_deadline = time.monotonic() + 12
         def verify():
@@ -1578,6 +1610,7 @@ def main():
                 blob = encode([sample_camera])
                 assert decode(blob)[0]['url'] == sample_camera['url'] and b'synthetic' not in blob
                 with window.modal():
+                    from camera_manager import CameraManager
                     manager = CameraManager([sample_camera], window, layout=1)
                     manager.show()
                     app.processEvents()

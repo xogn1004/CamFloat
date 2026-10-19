@@ -160,5 +160,16 @@ C500GS에서 내부망 동작을 확인했으며 다른 모델은 지원 여부�
         layout.addWidget(buttons)
 
 
-from camera_editor import CameraEditor
-from camera_manager import CameraManager
+def __getattr__(name):
+    # Keep the public imports used by existing callers without loading both
+    # editors, archive encryption and authentication just to open the help page.
+    if name == 'CameraEditor':
+        from camera_editor import CameraEditor
+        value = CameraEditor
+    elif name == 'CameraManager':
+        from camera_manager import CameraManager
+        value = CameraManager
+    else:
+        raise AttributeError(name)
+    globals()[name] = value
+    return value
