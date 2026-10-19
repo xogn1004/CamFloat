@@ -117,7 +117,11 @@ def document_check():
 
 
 def asset_check():
-    archive = ROOT / 'release/CamFloat-1.0.0-win-x64.zip'
+    metadata = (ROOT / 'version_info.txt').read_text(encoding='utf-8')
+    version = re.search(r"StringStruct\('ProductVersion', '([\w.-]+)'\)", metadata)
+    if not version:
+        raise ValueError('Product version was not found.')
+    archive = ROOT / 'release' / f'CamFloat-{version[1]}-win-x64.zip'
     assert archive.with_suffix('.sha256').read_text().split()[0] == sha256(archive)
     with zipfile.ZipFile(archive) as bundle:
         assert bundle.testzip() is None, 'ZIP CRC failure'

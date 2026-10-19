@@ -12,6 +12,7 @@ RTSP 카메라를 **작고 깔끔한 창으로** 보는 Windows용 무료 플레
 - **화면별 소리 조절** · 개별/전체 음소거 · HD/SD 선택
 - **빠른 확대와 전체화면** · 다른 화면의 연결은 유지
 - **카메라 관리** · 분할별 화면 배정 · 목록 내보내기/불러오기
+- **카메라 방향 조작 · 1.1.0 후보** · 내부망 C500GS에서 짧게·길게 누르기
 
 ## 시작하기
 
@@ -56,6 +57,6 @@ EXE에 코드 서명이 없어 Windows에서 **‘알 수 없는 게시자’** 
 
 ## 개발과 라이선스
 
-- [개발 안내](docs/development.md) · [1.0.0 검토·검사 요약](CODE_REVIEW.md) · [후속 개발 계획](docs/post-release-plan.md)
+- [개발 안내](docs/development.md) · [검토·검사 요약](CODE_REVIEW.md) · [후속 개발 계획](docs/post-release-plan.md)
 - [보안 안내](SECURITY.md) · [외부 라이브러리 고지와 소스](THIRD_PARTY.md)
 - CamFloat 소스: **[MIT 라이선스](LICENSE)**. 포함된 외부 라이브러리는 각각의 라이선스를 따릅니다.
