@@ -97,6 +97,11 @@ def trial(camera, path='/onvif0', literal_length=True, send_tone=True,
         if client:
             if open_attempted:
                 try:
+                    # The published candidate closes on /onvif1 even when opened
+                    # on /onvif0. Local close-only follow-up received 200 there.
+                    parts = client.parts
+                    client.uri = urlunsplit(('rtsp', f'{parts.hostname}:{parts.port or 554}', '/onvif1', '', ''))
+                    result['close_path_variant'] = '/onvif1'
                     result['close_status'] = client.request('USER_CMD_SET', headers('CLOSE'))
                 except (OSError, ValueError, IndexError) as error:
                     result['close_error'] = type(error).__name__
@@ -109,6 +114,17 @@ def save(results, probe=False):
     folder.mkdir(parents=True, exist_ok=True)
     filename = 'talkback-probe-latest.json' if probe else 'talkback-manual-latest.json'
     (folder / filename).write_text(json.dumps(results[-30:], indent=2) + '\n', encoding='utf-8')
+
+
+def previous_results():
+    path = ROOT / 'verification/current/camera-control/talkback-manual-latest.json'
+    try:
+        if path.stat().st_size > 1024 * 1024:
+            return []
+        result = json.loads(path.read_text(encoding='utf-8'))
+        return result[-30:] if isinstance(result, list) and all(isinstance(row, dict) for row in result) else []
+    except (OSError, ValueError):
+        return []
 
 
 def seconds_argument(value, lower, upper):
@@ -166,11 +182,12 @@ def main(argv=None):
         return 0
     print('\n작은 테스트음을 간격을 두고 반복합니다. 마이크와 카메라 음량 설정은 사용하지 않습니다.')
     print('소리가 나면 카메라 바로 옆에서 들리는지 확인하세요.')
+    print('실험용 전송 방식입니다. 연결 응답만으로 소리 재생을 확인할 수 없습니다.')
     delay = args.delay if args.delay is not None else prompt_seconds('몇 초 후 시작할까요?', 10, 0, 300)
     duration = args.duration if args.duration is not None else prompt_seconds('몇 초 동안 보낼까요?', 3, 1, 30)
     variants = [('/onvif0', True), ('/onvif1', False), ('/onvif1', True)]
     variant = 0
-    results = []
+    results = previous_results()
     while True:
         print(f'\n{delay}초 후 시작 · {duration}초 동안 전송')
         choice = input(f'시험 방식 {variant + 1}/3 · Enter: 시작 / T: 시간 설정 / N: 다음 방식 / Q: 종료 > ').strip().casefold()

@@ -24,11 +24,13 @@ class TalkbackTrialTests(unittest.TestCase):
                 self.parts = urlsplit(url)
                 self.sock = self
                 self.calls = []
+                self.request_uris = []
                 self.frames = []
                 self.closed = False
                 clients.append(self)
             def request(self, method, headers):
                 self.calls.append((method, headers))
+                self.request_uris.append(getattr(self, 'uri', ''))
                 if method == 'DESCRIBE':
                     return description_status
                 return open_status if 'AudioCtlCmd:OPEN' in ' '.join(headers) else 200
@@ -74,6 +76,14 @@ class TalkbackTrialTests(unittest.TestCase):
         self.assertFalse(clients[0].frames)
         self.assertEqual(len(clients[0].calls), 3)
         self.assertEqual(result['close_status'], 200)
+
+    def test_default_vendor_candidate_closes_on_documented_path(self):
+        clients, factory = self.factory()
+        result = trial.trial(self.camera, send_tone=False, client_factory=factory)
+        self.assertEqual(urlsplit(clients[0].request_uris[1]).path, '/onvif0')
+        self.assertEqual(urlsplit(clients[0].request_uris[2]).path, '/onvif1')
+        self.assertEqual(result['close_path_variant'], '/onvif1')
+        self.assertTrue(clients[0].closed)
 
     def test_rejected_open_sends_no_frames_but_attempts_close(self):
         clients, factory = self.factory(open_status=403)
@@ -149,6 +159,29 @@ class TalkbackTrialTests(unittest.TestCase):
             base = Path(folder) / 'verification/current/camera-control'
             self.assertEqual(json.loads((base / 'talkback-manual-latest.json').read_text()), [{'physical_result': 'heard'}])
             self.assertEqual(json.loads((base / 'talkback-probe-latest.json').read_text()), [{'frames_sent': 0}])
+
+    def test_new_manual_trial_keeps_previous_listening_results(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(trial, 'ROOT', Path(folder)):
+            evidence = {'camera_number': 1, 'physical_result': 'heard'}
+            trial.save([evidence])
+            fake_result = {'camera_number': 1, 'frames_sent': 100, 'physical_result': 'unconfirmed'}
+            with patch.object(trial, 'load_cameras', return_value=[self.camera]), \
+                    patch.object(trial, 'trial', return_value=fake_result), \
+                    patch.object(trial, 'countdown'), \
+                    patch('builtins.input', side_effect=['1', '', 'n', 'q']), redirect_stdout(io.StringIO()):
+                self.assertEqual(trial.main(['--delay', '0', '--duration', '2']), 0)
+            saved = trial.previous_results()
+            self.assertEqual(saved[0], evidence)
+            self.assertEqual(saved[1]['physical_result'], 'not_heard')
+
+    def test_invalid_history_is_not_used(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(trial, 'ROOT', Path(folder)):
+            self.assertEqual(trial.previous_results(), [])
+            base = Path(folder) / 'verification/current/camera-control'
+            base.mkdir(parents=True)
+            for raw in ('not-json', '{}', '[1]'):
+                (base / 'talkback-manual-latest.json').write_text(raw, encoding='utf-8')
+                self.assertEqual(trial.previous_results(), [])
 
 
 if __name__ == '__main__':

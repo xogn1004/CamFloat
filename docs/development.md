@@ -75,6 +75,8 @@ Android 제조사 앱 조사 도구는 `android-app-check.bat`입니다. 공식 
 
 APK 분석 상한은 파일당 512 MiB·ZIP 항목 30,000개·전체 원본 크기 768 MiB입니다. 개별 DEX·라이브러리는 64 MiB까지만 읽습니다. 실제 USB 기기에서 약 339 MiB APK 수집을 확인했으며, SDK 표식은 기기 호환성의 확정 판정에 사용하지 않습니다. 수집 이후에는 휴대폰을 분리해도 로컬 파일로 분석을 계속할 수 있습니다.
 
+후속 네이티브 분석은 로컬 `%LOCALAPPDATA%/CamFloatQA/android/analysis-libs`의 pyelftools 0.33·Capstone 5.0.9로 수행했습니다. 제조사 ARM64 라이브러리를 데이터로 읽어 함수·호출 관계만 추적하며 해당 라이브러리를 로드하거나 실행하지 않습니다. 이 분석 패키지는 앱 의존성이나 배포 파일에 추가하지 않았습니다.
+
 ### 릴리즈 전체 검사
 
 ```powershell
