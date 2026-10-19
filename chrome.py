@@ -142,7 +142,8 @@ class AppChrome(QWidget):
 
     def reveal(self):
         if (self.host.modal_depth or self.host.closing or self.host.isMinimized()
-                or not self.host.isVisible() or QApplication.activePopupWidget() is not None):
+                or not self.host.isVisible() or QApplication.activePopupWidget() is not None
+                or any(t.overlay.direction_popup.isVisible() for t in self.host.tiles)):
             return
         self.position()
         self.refresh()
@@ -154,7 +155,8 @@ class AppChrome(QWidget):
         self.host.position_screen_labels()
 
     def poll(self):
-        if self.host.closing or self.host.modal_depth or self.host.isMinimized() or not self.host.isVisible():
+        if (self.host.closing or self.host.modal_depth or self.host.isMinimized() or not self.host.isVisible()
+                or any(t.overlay.direction_popup.isVisible() for t in self.host.tiles)):
             self.hide()
             self.host.position_screen_labels()
             return

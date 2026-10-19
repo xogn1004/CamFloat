@@ -37,6 +37,11 @@ def icon(name, color='#e1eaf8'):
         else:
             for x, y, dx, dy in ((4, 4, 1, 1), (20, 4, -1, 1), (4, 20, 1, -1), (20, 20, -1, -1)):
                 line(x, y, x + 5 * dx, y); line(x, y, x, y + 5 * dy)
+    elif name == 'move_camera':
+        line(4, 12, 20, 12); line(12, 4, 12, 20)
+        for x, y, dx, dy in ((4, 12, 1, 0), (20, 12, -1, 0), (12, 4, 0, 1), (12, 20, 0, -1)):
+            line(x, y, x + 3 * dx + 3 * dy, y + 3 * dy + 3 * dx)
+            line(x, y, x + 3 * dx - 3 * dy, y + 3 * dy - 3 * dx)
     elif name in ('left', 'right', 'up', 'down'):
         points = {'left': [(15, 5), (8, 12), (15, 19)], 'right': [(9, 5), (16, 12), (9, 19)],
                   'up': [(5, 15), (12, 8), (19, 15)], 'down': [(5, 9), (12, 16), (19, 9)]}[name]

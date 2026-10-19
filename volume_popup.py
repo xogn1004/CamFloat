@@ -33,7 +33,8 @@ class VolumePopup(QFrame):
     def show_for_speaker(self):
         overlay = self.overlay
         camera = overlay.host.camera_for_slot(overlay.index)
-        if not camera or overlay.expanded_controls() or not overlay.isVisible():
+        if (not camera or overlay.expanded_controls() or not overlay.isVisible()
+                or (hasattr(overlay, 'direction_popup') and overlay.direction_popup.isVisible())):
             return
         self.hide_timer.stop()
         self.slider.blockSignals(True)

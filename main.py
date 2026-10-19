@@ -30,6 +30,8 @@ from menu_labels import (CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, men
                          topmost_name, master_mute_name, hardware_name)
 from volume_popup import VolumePopup
 from hover_tips import HoverTips
+from ptz_control import DirectionControl
+from direction_popup import DirectionPopup
 
 VERSION = '1.0.1-dev.1'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
@@ -233,6 +235,10 @@ class InputOverlay(QWidget):
             self.tips.add(item)
             return item
         self.reload = button('refresh', tooltip('이 영상 다시 연결', 'Ctrl+R'), lambda: self.host.reconnect(self.index))
+        self.move_camera = button('move_camera', '카메라 이동', self.toggle_direction_panel)
+        self.move_camera.setCheckable(True)
+        self.move_camera.setStyleSheet(self.move_camera.styleSheet() +
+            'QToolButton:checked{background:rgba(102,158,235,80);}')
         self.choose = button('camera', '이 화면의 카메라 지정', self.choose_camera)
         self.mute = button('muted', tooltip('이 영상 음소거 해제', 'M'), lambda: self.host.toggle_mute(self.index))
         self.volume = QSlider(Qt.Orientation.Horizontal)
@@ -250,6 +256,7 @@ class InputOverlay(QWidget):
         row.addWidget(self.mute)
         row.addWidget(self.volume)
         row.addWidget(self.value)
+        row.addWidget(self.move_camera)
         row.addWidget(self.choose)
         self.fullscreen = button('fullscreen', tooltip('전체화면', 'F11'), lambda: self.host.toggle_fullscreen(self.index))
         row.addWidget(self.fullscreen)
@@ -269,6 +276,15 @@ class InputOverlay(QWidget):
         self.idle_timer.setInterval(2500)
         self.idle_timer.timeout.connect(self.hide_idle_controls)
         self.volume_popup = VolumePopup(self)
+        self.direction_popup = DirectionPopup(self)
+        self.host.direction_control.changed.connect(self.direction_popup.update_state)
+
+    def toggle_direction_panel(self):
+        if self.direction_popup.isVisible():
+            self.direction_popup.close_panel()
+        else:
+            self.reveal_controls()
+            self.direction_popup.show_panel()
 
     def reveal_controls(self):
         self.hovered = True
@@ -277,7 +293,8 @@ class InputOverlay(QWidget):
 
     def hide_idle_controls(self):
         if (self.bar.underMouse() or self.previous.underMouse() or self.following.underMouse()
-                or self.volume.isSliderDown() or self.volume_popup.isVisible()):
+                or self.volume.isSliderDown() or self.volume_popup.isVisible()
+                or self.direction_popup.isVisible()):
             self.idle_timer.start()
             return
         self.hovered = False
@@ -363,10 +380,15 @@ class InputOverlay(QWidget):
             self.volume_popup.hide()
         self.volume.setVisible(expanded)
         self.value.setVisible(expanded)
-        width = 232 if expanded else 128
+        width = 261 if expanded else 138
+        self.bar.layout().setSpacing(3 if expanded else 2)
+        for item in (self.reload, self.mute, self.move_camera, self.choose, self.fullscreen):
+            item.setFixedSize(26 if expanded else 24, 26)
         self.bar.setGeometry(max(5, self.width() - width - 8), max(4, self.height() - 40), width, 32)
         self.previous.move(10, max(48, (self.height() - 40) // 2))
         self.following.move(max(10, self.width() - 42), max(48, (self.height() - 40) // 2))
+        if hasattr(self, 'direction_popup') and self.direction_popup.isVisible():
+            self.direction_popup.arrange()
 
     def show_status(self, text):
         if self.width() < 230 or self.height() < 140:
@@ -397,6 +419,9 @@ class InputOverlay(QWidget):
         self.previous.setAccessibleName(self.previous.toolTip())
         self.following.setAccessibleName(self.following.toolTip())
         self.reload.setEnabled(bool(camera) and not camera.get('connection_locked'))
+        self.move_camera.setEnabled(bool(camera) and not camera.get('connection_locked'))
+        if hasattr(self, 'direction_popup'):
+            self.direction_popup.update_state()
         self.mute.setEnabled(bool(camera))
         self.volume.setEnabled(bool(camera))
         self.fullscreen.setIcon(icon('restore' if self.host.isFullScreen() else 'fullscreen'))
@@ -429,6 +454,9 @@ class InputOverlay(QWidget):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
+        if self.direction_popup.isVisible():
+            super().leaveEvent(event)
+            return
         self.hovered = False
         self.label.hide()
         self.bar.hide()
@@ -439,6 +467,8 @@ class InputOverlay(QWidget):
 
     def hideEvent(self, event):
         self.tips.clear()
+        if hasattr(self, 'direction_popup'):
+            self.direction_popup.close_panel()
         if hasattr(self, 'volume_popup'):
             self.volume_popup.hide_timer.stop()
             self.volume_popup.hide()
@@ -528,6 +558,7 @@ class PlayerWindow(QWidget):
         self.fullscreen_entry_layout = None
         self.save_error_reported = False
         self.tiles = []
+        self.direction_control = DirectionControl(self)
         self.setWindowTitle(APP_TITLE + (
             f' · {PROFILES[self.playback_profile]}' if self.playback_profile != 'auto' else ''))
         self.setWindowIcon(app_icon())
@@ -573,6 +604,7 @@ class PlayerWindow(QWidget):
 
     def application_state_changed(self, state):
         if state != Qt.ApplicationState.ApplicationActive:
+            self.close_direction_panels()
             QTimer.singleShot(0, self, self.clear_background_selection)
 
     def clear_background_selection(self):
@@ -670,6 +702,13 @@ class PlayerWindow(QWidget):
         return True
 
     def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.MouseButtonPress:
+            for tile in self.tiles:
+                panel = tile.overlay.direction_popup
+                if (panel.isVisible() and isinstance(watched, QWidget)
+                        and watched is not tile.overlay.move_camera
+                        and watched is not panel and not panel.isAncestorOf(watched)):
+                    panel.close_panel()
         if (event.type() == QEvent.Type.WindowActivate and isinstance(watched, QWidget)
                 and (watched is self or any(watched is t.overlay for t in self.tiles))):
             # Windows can promote an owned SCREEN after mouse activation has
@@ -792,6 +831,8 @@ class PlayerWindow(QWidget):
         if not self.closing:
             self.persist()
             self.closing = True
+            self.close_direction_panels()
+            self.direction_control.shutdown()
             self.status_timer.stop()
             self.save_timer.stop()
             self.chrome.timer.stop()
@@ -799,7 +840,7 @@ class PlayerWindow(QWidget):
             self.chrome.close()
             for tile in self.tiles:
                 tile.release()
-        if not all(tile.worker.done.is_set() for tile in self.tiles):
+        if not all(tile.worker.done.is_set() for tile in self.tiles) or not self.direction_control.done.is_set():
             event.ignore()
             self.hide()
             QTimer.singleShot(50, self.close)
@@ -974,6 +1015,7 @@ class PlayerWindow(QWidget):
 
     @contextmanager
     def modal(self):
+        self.close_direction_panels()
         self.modal_depth += 1
         for shortcut in self.shortcuts:
             shortcut.setEnabled(False)
@@ -1182,6 +1224,8 @@ class PlayerWindow(QWidget):
         self.queue_save()
 
     def handle_escape(self):
+        if self.close_direction_panels():
+            return
         if self.focused_screen is not None:
             self.restore_focus()
         elif self.fullscreen_geometry is not None:
@@ -1204,6 +1248,7 @@ class PlayerWindow(QWidget):
             dialog.exec()
 
     def new_menu(self, title='', parent=None):
+        self.close_direction_panels()
         QToolTip.hideText()
         self.chrome.tips.clear()
         for tile in self.tiles:
@@ -1217,6 +1262,15 @@ class PlayerWindow(QWidget):
             menu.aboutToShow.connect(self.chrome.hide)
         menu.aboutToHide.connect(lambda: QTimer.singleShot(0, self.repair_overlays))
         return menu
+
+    def close_direction_panels(self):
+        closed = False
+        for tile in self.tiles:
+            panel = tile.overlay.direction_popup
+            if panel.target is not None:
+                panel.close_panel()
+                closed = True
+        return closed
 
     def populate_camera_menu(self, menu, index):
         camera = self.camera_for_slot(index)
@@ -1275,6 +1329,8 @@ class PlayerWindow(QWidget):
             mute.setChecked(camera['muted'])
             mute.triggered.connect(lambda: self.toggle_mute(index))
             menu.addAction(icon('refresh'), menu_text('이 영상 다시 연결', 'Ctrl+R'), lambda: self.reconnect(index))
+            move = menu.addAction(icon('move_camera'), '카메라 이동', self.tiles[index].overlay.toggle_direction_panel)
+            move.setEnabled(not camera.get('connection_locked'))
             if self.config['layout'] > 1:
                 menu.addAction(icon('enlarge'), menu_text('이 화면만 크게 보기', '더블클릭'), lambda: self.single_view(index))
         if self.focused_screen is not None:

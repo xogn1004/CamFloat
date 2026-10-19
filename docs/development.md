@@ -25,6 +25,7 @@ cd CamFloat
 
 | 파일 | 역할 |
 | --- | --- |
+| `onvif_control.py`, `ptz_control.py`, `direction_popup.py` | ONVIF 방향 조작·비동기 작업·스크린별 방향 패널 |
 | `main.py`, `playback.py` | 화면 배정·확대·전체화면과 비동기 재생 작업 |
 | `chrome.py`, `native_window.py` | 상단 도구와 Windows 창·오버레이 처리 |
 | `camera_manager.py`, `camera_editor.py`, `camera_draft.py` | 관리 초안·최종 저장과 연결 정보 입력·검증 |
@@ -59,7 +60,7 @@ cd CamFloat
 | 목록 파일 | `check.bat files` |
 | 분할·전체화면·도구 | `check.bat window` |
 | 첫 실행·바로가기 | `check.bat shortcuts` |
-| 수동 회전 시험 도구 (가상 기기로 검사) | `check.bat ptz` |
+| 방향 패널·작업 취소·카메라 대상·회전 프로토콜 (가상 기기로 검사) | `check.bat ptz` |
 | 스피커 시험 도구·시간 설정 (가상 기기로 검사) | `check.bat talkback` |
 | Android APK 조사 도구 (가상 ADB로 검사) | `check.bat android` |
 
