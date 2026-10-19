@@ -40,7 +40,7 @@ def direction_valid(pan, tilt):
             and (pan, tilt) in ((-1, 0), (1, 0), (0, -1), (0, 1)))
 
 
-def envelope(parts, namespace, operation, profile_token=None, pan=None, tilt=0):
+def envelope(parts, namespace, operation, profile_token=None, pan=None, tilt=0, *, device_timeout_ms=250):
     if operation not in ALLOWED or (pan is not None and not direction_valid(pan, tilt)) or (pan is None and tilt != 0):
         raise ValueError('Unsupported request')
     root = ET.Element(ET.QName(SOAP, 'Envelope'))
@@ -66,11 +66,13 @@ def envelope(parts, namespace, operation, profile_token=None, pan=None, tilt=0):
     if operation == 'ContinuousMove':
         if not direction_valid(pan, tilt):
             raise ValueError('Direction required')
+        if type(device_timeout_ms) is not int or not 250 <= device_timeout_ms <= 2000:
+            raise ValueError('Unsupported movement duration')
         velocity = element(op, PTZ, 'Velocity')
         element(velocity, SCHEMA, 'PanTilt', x=str(pan), y=str(tilt))
         element(velocity, SCHEMA, 'Zoom', x='0')
-        # Device-side bound plus an independent explicit Stop request below.
-        element(op, PTZ, 'Timeout', 'PT0.25S')
+        # App steps retain 250ms. Longer values are for the manual comparison.
+        element(op, PTZ, 'Timeout', f'PT{device_timeout_ms / 1000:g}S')
     return ET.tostring(root, xml_declaration=True, encoding='utf-8')
 
 
@@ -97,8 +99,10 @@ class Client:
         self.ptz_path = None
         self.ptz_port = 5000
 
-    def call(self, path, namespace, operation, pan=None, on_sent=None, tilt=0, port=None, timeout=1):
-        body = envelope(self.parts, namespace, operation, self.profile_token, pan, tilt)
+    def call(self, path, namespace, operation, pan=None, on_sent=None, tilt=0, port=None, timeout=1,
+             *, device_timeout_ms=250):
+        body = envelope(self.parts, namespace, operation, self.profile_token, pan, tilt,
+                        device_timeout_ms=device_timeout_ms)
         connection = self.connection_factory(self.parts.hostname, port or (self.ptz_port if namespace == PTZ else 5000), timeout=timeout)
         result = {'operation': operation, 'response_verified': False, 'request_sent': False}
         root = None

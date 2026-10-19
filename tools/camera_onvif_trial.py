@@ -45,9 +45,82 @@ def previous_results():
         return []
 
 
+def continuous_trial(client, pan, tilt, duration_ms):
+    """Send ONE bounded move, with an independent stop; no repeated commands."""
+    if (not direction_valid(pan, tilt) or type(duration_ms) is not int
+            or duration_ms not in (250, 1000, 2000)):
+        raise ValueError('Unsupported comparison')
+    result = {'pan_sign': pan, 'tilt_sign': tilt, 'device_timeout_ms': duration_ms,
+              'move_requests': 0, 'physical_result': 'unconfirmed'}
+    started = threading.Event()
+    interrupted = threading.Event()
+    def stop():
+        interrupted.wait(duration_ms / 1000)
+        result['timed_stop'] = client.call(client.ptz_path, PTZ, 'Stop', timeout=.3)[0]
+    timer = threading.Thread(target=stop, name='CamFloat comparison stop', daemon=True)
+    def sent():
+        result['move_requests'] = 1
+        timer.start()
+        started.set()
+    try:
+        result['move'] = client.call(client.ptz_path, PTZ, 'ContinuousMove', pan=pan,
+                                     tilt=tilt, device_timeout_ms=duration_ms,
+                                     on_sent=sent, timeout=.3)[0]
+    except BaseException:
+        interrupted.set()
+        raise
+    finally:
+        if started.is_set():
+            timer.join()
+            # Try once more after the movement request has returned as well.
+            result['final_stop'] = client.call(client.ptz_path, PTZ, 'Stop', timeout=.3)[0]
+    return result
+
+
+def continuous_menu(client, camera, delay):
+    print('\n연속 이동 비교 시험 · 이동 명령은 매회 한 번만 보냅니다.')
+    print('실제 렌즈를 보면서 0.25초와 1초의 이동 거리를 비교하세요.')
+    print('시간이 늘어도 한 칸만 움직이면 연속 이동을 지원하지 않을 수 있습니다.')
+    print('정지 응답은 미확인입니다. 멈추지 않으면 제조사 앱에서 멈추세요.')
+    duration_ms = 250
+    path = ROOT / 'verification/current/camera-control/continuous-manual-latest.json'
+    try:
+        if path.stat().st_size > 1024 * 1024:
+            raise ValueError('Report too large')
+        results = json.loads(path.read_text(encoding='utf-8'))[-50:]
+        if not isinstance(results, list) or not all(isinstance(row, dict) for row in results):
+            results = []
+    except (OSError, ValueError, TypeError):
+        results = []
+    while True:
+        print(f'\n이동 시간: {duration_ms / 1000:g}초')
+        choice = input('L/R/U/D: 좌/우/상/하 · 1: 0.25초 / 2: 1초 / 3: 2초 · Q: 종료 > ').strip().casefold()
+        if choice == 'q':
+            return 0
+        if choice in ('1', '2', '3'):
+            duration_ms = {'1': 250, '2': 1000, '3': 2000}[choice]
+            continue
+        directions = {'l': (-1, 0), 'r': (1, 0), 'u': (0, 1), 'd': (0, -1)}
+        if choice not in directions:
+            continue
+        if delay:
+            print(f'{delay}초 뒤 한 번 전송합니다.', flush=True)
+            time.sleep(delay)
+        result = continuous_trial(client, *directions[choice], duration_ms)
+        result['camera_number'] = camera['number']
+        results.append(result)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(results[-50:], indent=2) + '\n', encoding='utf-8')
+        answer = input('C: 연속 이동 후 멈춤 / S: 한 칸만 이동 / N: 이동 없음 / Enter: 미확인 > ').strip().casefold()
+        result['physical_result'] = {'c': 'continuous_and_stopped', 's': 'single_step',
+                                     'n': 'not_moved'}.get(answer, 'unconfirmed')
+        path.write_text(json.dumps(results[-50:], indent=2) + '\n', encoding='utf-8')
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='카메라 ONVIF 회전 시험')
     parser.add_argument('--probe', action='store_true', help='기능 조회만 수행. 이동·정지 요청 없음')
+    parser.add_argument('--continuous', action='store_true', help='반복 전송 없이 연속 이동 비교')
     parser.add_argument('--delay', type=int, default=3, help='이동 전 대기 시간, 0~300초 (기본 3초)')
     args = parser.parse_args(argv)
     if not 0 <= args.delay <= 300:
@@ -74,6 +147,8 @@ def main(argv=None):
     if not discovered.get('profile_verified'):
         print('회전 제어 정보를 확인하지 못했습니다. 이동 요청은 보내지 않았습니다.')
         return 1
+    if args.continuous:
+        return continuous_menu(client, camera, args.delay)
     paths = list(dict.fromkeys([client.ptz_path, '/onvif/ptz_service']))
     path_index = 0
     print('\n회전 제어 정보 확인 완료. 실제 렌즈를 보면서 시험하세요.')

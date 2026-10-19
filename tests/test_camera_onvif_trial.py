@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import tempfile
+import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 import unittest
@@ -104,6 +105,70 @@ class ONVIFTrialTests(unittest.TestCase):
         root = ET.fromstring(requests[0][2])
         self.assertEqual(root.find('.//{' + trial.PTZ + '}Timeout').text, 'PT0.25S')
         self.assertIsNone(root.find('.//{' + trial.PTZ + '}Stop'))
+
+    def test_manual_duration_is_bounded_and_step_default_stays_unchanged(self):
+        for duration, expected in ((250, 'PT0.25S'), (1000, 'PT1S'), (2000, 'PT2S')):
+            root = ET.fromstring(trial.envelope(urlsplit(self.camera['url']), trial.PTZ,
+                'ContinuousMove', 'token', -1, device_timeout_ms=duration))
+            self.assertEqual(root.find('.//{' + trial.PTZ + '}Timeout').text, expected)
+        for duration in (0, 249, 2001, True, 1000.0, '1000'):
+            with self.subTest(duration=duration), self.assertRaises(ValueError):
+                trial.envelope(urlsplit(self.camera['url']), trial.PTZ,
+                    'ContinuousMove', 'token', -1, device_timeout_ms=duration)
+
+    def test_continuous_comparison_sends_only_one_move_and_stops_independently(self):
+        calls = []
+        stopped = threading.Event()
+        class Client:
+            ptz_path = '/custom/ptz'
+            def call(self, path, namespace, operation, **kwargs):
+                calls.append((operation, kwargs))
+                if operation == 'ContinuousMove':
+                    kwargs['on_sent']()
+                    # The independent Stop must run while the move reply waits.
+                    if not stopped.wait(2):
+                        raise AssertionError('Stop waited for movement response')
+                else:
+                    stopped.set()
+                return {'request_sent': True, 'response_verified': False}, None
+        result = trial.continuous_trial(Client(), 0, 1, 250)
+        self.assertEqual([c[0] for c in calls], ['ContinuousMove', 'Stop', 'Stop'])
+        self.assertEqual(calls[0][1]['device_timeout_ms'], 250)
+        self.assertEqual(calls[0][1]['tilt'], 1)
+        self.assertEqual(result['move_requests'], 1)
+        self.assertEqual(result['physical_result'], 'unconfirmed')
+
+    def test_continuous_comparison_interrupt_still_stops(self):
+        calls = []
+        class Client:
+            ptz_path = '/custom/ptz'
+            def call(self, path, namespace, operation, **kwargs):
+                calls.append(operation)
+                if operation == 'ContinuousMove':
+                    kwargs['on_sent']()
+                    raise KeyboardInterrupt()
+                return {'request_sent': True, 'response_verified': False}, None
+        with self.assertRaises(KeyboardInterrupt):
+            trial.continuous_trial(Client(), -1, 0, 2000)
+        self.assertEqual(calls, ['ContinuousMove', 'Stop', 'Stop'])
+
+    def test_continuous_comparison_invalid_input_sends_nothing(self):
+        from unittest.mock import Mock
+        client = Mock()
+        for pan, tilt, duration in ((0, 0, 250), (1, 1, 250), (1, 0, 300),
+                                    (1, 0, 3000), (1, 0, 250.0)):
+            with self.subTest(pan=pan, tilt=tilt, duration=duration), self.assertRaises(ValueError):
+                trial.continuous_trial(client, pan, tilt, duration)
+        client.call.assert_not_called()
+
+    def test_continuous_menu_exit_never_moves_or_touches_settings(self):
+        from unittest.mock import Mock
+        client = Mock()
+        with tempfile.TemporaryDirectory() as folder, patch.object(trial, 'ROOT', Path(folder)), \
+                patch('builtins.input', side_effect=['2', 'q']), redirect_stdout(io.StringIO()):
+            self.assertEqual(trial.continuous_menu(client, self.camera, 0), 0)
+            self.assertEqual(list(Path(folder).iterdir()), [])
+        client.call.assert_not_called()
 
     def test_disconnect_is_unconfirmed_and_does_not_expose_credentials(self):
         class Connection:
