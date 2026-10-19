@@ -75,6 +75,24 @@ class SimpleRegistrationTests(unittest.TestCase):
                 e.check_connection()
             self.assertEqual(urlsplit(start.call_args.args[0]).port, port)
 
+    def test_control_port_is_independent_and_survives_input_mode_changes(self):
+        e = self.editor
+        e.host.setText('example.com')
+        e.port.setValue(15554)
+        self.assertEqual(e.control_port.value(), 5000)
+        e.control_port.setValue(25554)
+        e.advanced.setChecked(True)
+        e.mode.setCurrentIndex(1)
+        result = e.collect()
+        self.assertEqual(result['control_port'], 25554)
+        self.assertEqual(urlsplit(result['url']).port, 15554)
+        e.mode.setCurrentIndex(0)
+        self.assertEqual(e.collect()['control_port'], 25554)
+        from ptz_metadata import defaults
+        e.camera = dict(result, ptz=dict(defaults(result), checked=True))
+        e.control_port.setValue(25555)
+        self.assertIsNone(e.collect()['ptz'])
+
     def test_add_and_mode_switch_use_the_same_normalized_address(self):
         e = self.editor
         e.host.setText('example.com:15555')

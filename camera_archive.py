@@ -35,6 +35,10 @@ def _record(raw):
     if type(enabled) is not bool:
         raise ValueError('카메라 정보가 올바르지 않습니다.')
     result['enabled'] = enabled
+    port = raw.get('control_port', 5000)
+    if type(port) is not int or not 1 <= port <= 65535:
+        raise ValueError('방향 조작 포트가 올바르지 않습니다.')
+    result['control_port'] = port
     if raw.get('quality', 'HD') not in ('HD', 'SD'):
         raise ValueError('카메라 정보가 올바르지 않습니다.')
     result['quality'] = raw.get('quality', 'HD')
@@ -48,7 +52,7 @@ def _record(raw):
 def encode(cameras):
     if not cameras or len(cameras) > MAX_CAMERAS:
         raise ValueError('내보낼 카메라 목록을 확인하세요.')
-    keys = ('name', 'url', 'sd_url', 'quality', 'enabled')
+    keys = ('name', 'url', 'sd_url', 'quality', 'enabled', 'control_port')
     records = [{key: checked[key] for key in keys} for checked in map(_record, cameras)]
     payload = json.dumps(dict(version=1, cameras=records), ensure_ascii=False, allow_nan=False).encode('utf-8')
     nonce = os.urandom(12)

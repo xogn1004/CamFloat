@@ -6,6 +6,7 @@ import base64
 import datetime as dt
 import hashlib
 import http.client
+import ipaddress
 import secrets
 import threading
 from urllib.parse import unquote, urlsplit
@@ -80,24 +81,42 @@ def service_path(url, host):
     return service_endpoint(url, host)[0]
 
 
-def service_endpoint(url, host):
+def service_endpoint(url, host, *, override_port=None, allow_private_advertisement=False):
     parts = urlsplit(url or '')
     port = parts.port or 80
-    if (parts.scheme != 'http' or parts.hostname != host or not 1 <= port <= 65535
+    same_host = parts.hostname is not None and parts.hostname.casefold() == host.casefold()
+    private_advertisement = False
+    if allow_private_advertisement and not same_host:
+        try:
+            address = ipaddress.ip_address(parts.hostname)
+            private_advertisement = address.version == 4 and address.is_private and not any((
+                address.is_loopback, address.is_link_local, address.is_multicast,
+                address.is_unspecified, address.is_reserved))
+        except ValueError:
+            pass
+    if (parts.scheme != 'http' or not (same_host or private_advertisement) or not 1 <= port <= 65535
             or parts.username or parts.password or parts.query or parts.fragment
-            or not parts.path.startswith('/') or parts.path.startswith('//')
+            or not parts.path.startswith('/') or parts.path.startswith('//') or len(parts.path) > 1024
             or any(ord(c) <= 32 or c == '\\' for c in parts.path)):
         raise ValueError('Untrusted service address')
-    return parts.path, port
+    return parts.path, override_port if override_port is not None else port
 
 
 class Client:
     def __init__(self, camera, connection_factory=http.client.HTTPConnection):
+        from ptz_metadata import control_port
         self.parts = urlsplit(camera['url'])
         self.connection_factory = connection_factory
         self.profile_token = None
         self.ptz_path = None
-        self.ptz_port = 5000
+        self.control_port = control_port(camera)
+        try:
+            address = ipaddress.ip_address(self.parts.hostname)
+            self.remote_route = not address.is_private
+        except ValueError:
+            self.remote_route = True
+        self.fixed_control_port = 'control_port' in camera or self.remote_route
+        self.ptz_port = self.control_port
 
     def build_envelope(self, namespace, operation, pan, tilt, device_timeout_ms):
         return envelope(self.parts, namespace, operation, self.profile_token, pan, tilt,
@@ -106,7 +125,7 @@ class Client:
     def call(self, path, namespace, operation, pan=None, on_sent=None, tilt=0, port=None, timeout=1,
              *, device_timeout_ms=250, attempt=None):
         body = self.build_envelope(namespace, operation, pan, tilt, device_timeout_ms)
-        connection = self.connection_factory(self.parts.hostname, port or (self.ptz_port if namespace == PTZ else 5000), timeout=timeout)
+        connection = self.connection_factory(self.parts.hostname, port or (self.ptz_port if namespace == PTZ else self.control_port), timeout=timeout)
         result = {'operation': operation, 'response_verified': False, 'request_sent': False}
         root = None
         action = namespace + '/' + operation
@@ -180,11 +199,16 @@ class Client:
             if local(node) in ('Media', 'PTZ'):
                 addr = next((n.text for n in node if local(n) == 'XAddr'), None)
                 if addr:
-                    services[local(node)] = service_endpoint(addr, self.parts.hostname)
+                    try:
+                        services[local(node)] = service_endpoint(addr, self.parts.hostname,
+                            override_port=self.control_port if self.fixed_control_port else None,
+                            allow_private_advertisement=self.remote_route)
+                    except ValueError:
+                        continue  # Invalid advertisements never change our destination host.
         if 'PTZ' not in services or 'Media' not in services:
             return report
         self.ptz_path, self.ptz_port = services['PTZ']
-        for path, port in dict.fromkeys([services['Media'], ('/onvif/media_service', 5000)]):
+        for path, port in dict.fromkeys([services['Media'], ('/onvif/media_service', self.control_port)]):
             result, profiles = self.call(path, MEDIA, 'GetProfiles', port=port)
             if not result['response_verified']:
                 continue

@@ -143,6 +143,21 @@ class CameraEditor(QDialog):
         self.hd_group = field_group('영상 경로 (HD)', self.fields['path'])
         advanced_form.addWidget(self.hd_group)
         advanced_form.addWidget(field_group('영상 경로 (SD)', self.fields['sd_url']))
+        self.control_port = QSpinBox()
+        self.control_port.setRange(1, 65535)
+        self.control_port.setValue(self.camera.get('control_port', 5000))
+        control_row = QHBoxLayout()
+        control_group = field_group('방향 조작 포트', self.control_port)
+        control_group.setFixedWidth(124)
+        control_row.addWidget(control_group)
+        control_info = QToolButton()
+        control_info.setIcon(icon('info'))
+        control_info.setToolTip('외부 접속 시 포트포워딩한 제어 포트를 입력하세요.\n영상 포트와 다릅니다. ipTIME 기본값: 5000')
+        control_info.setAccessibleName('방향 조작 포트 도움말')
+        self.tips.add(control_info, click=True)
+        control_row.addWidget(control_info, 0, Qt.AlignmentFlag.AlignBottom)
+        control_row.addStretch()
+        advanced_form.addLayout(control_row)
         self.sd_url.setPlaceholderText('/onvif2 또는 RTSP 주소')
         self.fields['path'].setToolTip('ipTIME HD 경로: /onvif1')
         self.fields['sd_url'].setToolTip('ipTIME SD 경로: /onvif2\n영상 경로나 별도의 RTSP 주소를 입력할 수 있습니다.')
@@ -192,6 +207,7 @@ class CameraEditor(QDialog):
         for key in ('host', 'username', 'password', 'path', 'full_url', 'sd_url'):
             self.fields[key].edit.textEdited.connect(self.input_changed)
         self.port.valueChanged.connect(self.input_changed)
+        self.control_port.valueChanged.connect(self.input_changed)
         self.quality.currentIndexChanged.connect(self.input_changed)
         self.fields['path'].setEnabled(self.mode.currentIndex() == 0)
         self.hd_group.setVisible(self.mode.currentIndex() == 0)
@@ -211,7 +227,7 @@ class CameraEditor(QDialog):
     def fit_form(self):
         self.pages.updateGeometry()
         simple = self.mode.currentIndex() == 0
-        height = (400 if simple else 350) + ((125 if simple else 70) if self.advanced.isChecked() else 0)
+        height = (400 if simple else 350) + ((185 if simple else 130) if self.advanced.isChecked() else 0)
         screen = self.screen().availableGeometry()
         self.resize(min(self.width(), screen.width()), min(height, screen.height() - 60))
 
@@ -279,7 +295,7 @@ class CameraEditor(QDialog):
             base = urlsplit(url)
             path, separator, query = sd_url.partition('?')
             sd_url = urlunsplit((base.scheme, base.netloc, path, query if separator else '', ''))
-        result.update(url=url, sd_url=sd_url, quality=self.quality.currentText())
+        result.update(url=url, sd_url=sd_url, quality=self.quality.currentText(), control_port=self.control_port.value())
         from ptz_metadata import validated
         result['ptz'] = validated(result.get('ptz'), result)
         if result['sd_url']:

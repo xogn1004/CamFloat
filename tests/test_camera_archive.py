@@ -11,6 +11,19 @@ from camera_model import new_camera
 
 
 class ArchiveTests(unittest.TestCase):
+    def test_control_port_transfers_but_discovered_metadata_does_not(self):
+        self.camera['control_port'] = 25554
+        self.camera['ptz'] = {'private': 'not transferred'}
+        imported = archive.decode(archive.encode([self.camera]))[0]
+        self.assertEqual(imported['control_port'], 25554)
+        self.assertIsNone(imported['ptz'])
+        old = dict(self.camera)
+        old.pop('control_port')
+        self.assertEqual(archive._record(old)['control_port'], 5000)
+        for value in (True, 0, 65536, '25554', None):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                archive.encode([dict(self.camera, control_port=value)])
+
     def setUp(self):
         self.camera = new_camera('거실', 'rtsp://viewer:synthetic%21@127.0.0.1:8554/onvif1')
         self.camera.update(number=7, sd_url='rtsp://viewer:synthetic%21@127.0.0.1:8554/onvif2', volume=43, muted=True)
@@ -33,7 +46,7 @@ class ArchiveTests(unittest.TestCase):
         plaintext = AESGCM(archive._FORMAT_KEY).decrypt(
             blob[start:start + 12], blob[start + 12:], archive.MAGIC)
         record = json.loads(plaintext)['cameras'][0]
-        self.assertEqual(set(record), {'name', 'url', 'sd_url', 'quality', 'enabled'})
+        self.assertEqual(set(record), {'name', 'url', 'sd_url', 'quality', 'enabled', 'control_port'})
 
     def test_legacy_audio_fields_are_ignored_on_decode_and_import(self):
         for volume, muted in ((0, True), (43, True), (200, False), ('ignored', ['ignored'])):

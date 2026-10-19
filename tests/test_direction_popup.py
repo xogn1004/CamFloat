@@ -204,6 +204,20 @@ class DirectionPopupTests(unittest.TestCase):
         QTest.qWait(650)
         self.assertEqual(len(FakeClient.calls), count)
 
+    def test_control_port_only_change_requeries_and_ignores_old_metadata(self):
+        from ptz_control import camera_key
+        from ptz_metadata import defaults
+        cameras = [dict(c) for c in self.window.config['cameras']]
+        old = dict(cameras[0])
+        cameras[0]['control_port'] = 25554
+        with patch.object(self.window.direction_control, 'discover') as query:
+            self.assertTrue(self.window.commit_camera_draft(cameras, self.window.config['layout_slots'], True))
+            self.assertEqual(query.call_count, 1)
+            query.assert_called_with(self.window.config['cameras'][0])
+        before = self.window.config['cameras'][0].get('ptz')
+        self.window.store_control_metadata(camera_key(old), dict(defaults(old), checked=True))
+        self.assertEqual(self.window.config['cameras'][0].get('ptz'), before)
+
 
 if __name__ == '__main__':
     unittest.main()

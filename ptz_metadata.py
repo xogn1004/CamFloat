@@ -8,14 +8,32 @@ DEFAULT_PORT = 5000
 DEFAULT_PROFILE = 'IPCProfilesToken0'
 
 
+def control_port(camera):
+    value = camera.get('control_port', DEFAULT_PORT)
+    if type(value) is not int or not 1 <= value <= 65535:
+        raise ValueError('방향 조작 포트를 확인하세요.')
+    return value
+
+
 def supported_target(camera):
     """Transport scope, independent of whether this camera is enabled."""
     try:
         parts = urlsplit(camera.get('url', ''))
-        address = ipaddress.ip_address(parts.hostname)
-        return (parts.scheme == 'rtsp' and address.version == 4 and address.is_private
-                and not any((address.is_loopback, address.is_link_local, address.is_multicast,
-                             address.is_unspecified, address.is_reserved)))
+        control_port(camera)
+        if parts.scheme != 'rtsp' or not parts.hostname or parts.port == 0:
+            return False
+        try:
+            address = ipaddress.ip_address(parts.hostname)
+        except ValueError:
+            # DDNS names are contacted exactly as registered, without following
+            # any host returned in an ONVIF response.
+            name = parts.hostname.rstrip('.').encode('idna').decode('ascii')
+            labels = name.split('.')
+            return (name.lower() != 'localhost' and len(name) <= 253 and len(labels) >= 2
+                    and all(0 < len(label) <= 63 and label[0].isalnum() and label[-1].isalnum()
+                            and all(c.isalnum() or c == '-' for c in label) for label in labels))
+        return (address.version == 4 and not any((address.is_loopback, address.is_link_local,
+                address.is_multicast, address.is_unspecified, address.is_reserved)))
     except (AttributeError, TypeError, ValueError):
         return False
 
@@ -36,7 +54,12 @@ def support_state(camera):
 
 
 def binding(camera):
-    return hashlib.sha256(str(camera.get('url', '')).encode('utf-8')).hexdigest()
+    value = str(camera.get('url', ''))
+    port = control_port(camera)
+    # Preserve compatible existing caches for the original default port.
+    if port != DEFAULT_PORT:
+        value += '\ncontrol_port=' + str(port)
+    return hashlib.sha256(value.encode('utf-8')).hexdigest()
 
 
 def validated(value, camera):
@@ -58,7 +81,7 @@ def validated(value, camera):
 
 
 def defaults(camera):
-    return dict(binding=binding(camera), path=DEFAULT_PATH, port=DEFAULT_PORT,
+    return dict(binding=binding(camera), path=DEFAULT_PATH, port=control_port(camera),
                 profile=DEFAULT_PROFILE, checked=False, source='default')
 
 

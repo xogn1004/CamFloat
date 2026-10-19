@@ -2,6 +2,7 @@
 import base64
 from contextlib import redirect_stderr, redirect_stdout
 import hashlib
+import ipaddress
 import io
 import json
 import tempfile
@@ -196,6 +197,49 @@ class ONVIFTrialTests(unittest.TestCase):
         self.assertEqual(client.profile_token, 'actual-token')
         self.assertEqual(client.ptz_path, '/onvif/deviceio_service')
         self.assertNotIn('actual-token', json.dumps(result))
+
+    def test_nat_discovery_and_movement_use_registered_host_and_configured_port(self):
+        private_host = str(ipaddress.IPv4Address(0x0a000007))
+        calls = []
+        class Response:
+            status = 200
+            def __init__(self, operation): self.operation = operation
+            def read(self, size):
+                if self.operation == 'GetCapabilities':
+                    return (f'<s:Envelope xmlns:s="{trial.SOAP}"><s:Body><d:GetCapabilitiesResponse xmlns:d="{trial.DEVICE}">'
+                        f'<Capabilities xmlns="{trial.SCHEMA}"><Media><XAddr>http://{private_host}:5000/onvif/media_service</XAddr></Media>'
+                        f'<PTZ><XAddr>http://{private_host}:5000/onvif/deviceio_service</XAddr></PTZ></Capabilities>'
+                        '</d:GetCapabilitiesResponse></s:Body></s:Envelope>').encode()
+                if self.operation == 'GetProfiles':
+                    return (f'<s:Envelope xmlns:s="{trial.SOAP}"><s:Body><trt:GetProfilesResponse xmlns:trt="{trial.MEDIA}" xmlns:tt="{trial.SCHEMA}">'
+                        '<trt:Profiles token="synthetic-token"><tt:PTZConfiguration token="synthetic-config"/></trt:Profiles>'
+                        '</trt:GetProfilesResponse></s:Body></s:Envelope>').encode()
+                return (f'<s:Envelope xmlns:s="{trial.SOAP}"><s:Body><p:ContinuousMoveResponse xmlns:p="{trial.PTZ}"/></s:Body></s:Envelope>').encode()
+        class Connection:
+            def __init__(self, host, port, timeout): self.host, self.port = host, port
+            def request(self, method, path, body, headers):
+                self.operation = next(iter(ET.fromstring(body).find('{' + trial.SOAP + '}Body'))).tag.rsplit('}', 1)[-1]
+                calls.append((self.host, self.port, path, self.operation))
+            def getresponse(self): return Response(self.operation)
+            def close(self): pass
+        camera = dict(self.camera, url='rtsp://user:synthetic@example.com:15554/onvif1', control_port=25554)
+        client = trial.Client(camera, Connection)
+        self.assertTrue(client.discover()['profile_verified'])
+        self.assertTrue(client.step(1)['response_verified'])
+        self.assertEqual(len(calls), 3)
+        self.assertTrue(all(host == 'example.com' and port == 25554 for host, port, _, _ in calls))
+        self.assertEqual(client.ptz_path, '/onvif/deviceio_service')
+
+    def test_nat_advertisements_cannot_redirect_to_arbitrary_host_or_port(self):
+        from onvif_control import service_endpoint
+        host = str(ipaddress.IPv4Address(0x0a000007))
+        self.assertEqual(service_endpoint(f'http://{host}:5000/custom/ptz', 'example.com',
+            override_port=25554, allow_private_advertisement=True), ('/custom/ptz', 25554))
+        for url in ('http://other.example.com:5000/ptz', 'http://127.0.0.1/ptz',
+                    f'http://user:secret@{host}:5000/ptz', f'http://{host}:5000//bad',
+                    f'http://{host}:5000/ptz?secret=1', f'https://{host}:5000/ptz'):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                service_endpoint(url, 'example.com', override_port=25554, allow_private_advertisement=True)
 
     def test_stop_runs_after_disconnect_during_movement(self):
         calls = []

@@ -81,7 +81,7 @@ def crypt(value, decrypt=False):
 
 
 def new_camera(name='', url=''):
-    return dict(id=uuid.uuid4().hex, number=None, enabled=True, name=name, url=url, sd_url='', quality='HD', volume=100, muted=False, ptz=None)
+    return dict(id=uuid.uuid4().hex, number=None, enabled=True, name=name, url=url, sd_url='', quality='HD', volume=100, muted=False, control_port=5000, ptz=None)
 
 
 def default_config():
@@ -231,14 +231,21 @@ def normalize(raw, encrypted=False):
             camera['quality'] = 'HD'
         camera['volume'] = bounded_int(camera['volume'], 100, 0, 100)
         camera['muted'] = bool(camera['muted'])
-        from ptz_metadata import validated
+        port = camera.get('control_port', 5000)
+        camera['control_port'] = port if type(port) is int and 1 <= port <= 65535 else 5000
+        from ptz_metadata import validated, binding
         try:
             hints = camera.get('ptz')
             if encrypted and isinstance(hints, str):
                 if len(hints) > 8192:
                     raise ValueError('Invalid control cache')
                 hints = json.loads(crypt(hints, decrypt=True))
-            camera['ptz'] = validated(hints, camera)
+            checked_hints = validated(hints, camera)
+            if 'control_port' not in item and checked_hints and checked_hints['port'] != 5000:
+                # Preserve a nonstandard port discovered by an older version.
+                camera['control_port'] = checked_hints['port']
+                checked_hints = dict(checked_hints, binding=binding(camera))
+            camera['ptz'] = checked_hints
         except (OSError, ValueError, TypeError, UnicodeError):
             camera['ptz'] = None  # Corrupt control cache must not block playback.
         result['cameras'].append(camera)

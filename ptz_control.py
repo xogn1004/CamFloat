@@ -1,14 +1,12 @@
-"""Nonblocking, one-shot direction commands for registered LAN cameras."""
-import ipaddress
+"""Nonblocking direction commands for registered local and remote cameras."""
 from collections import deque
 import math
 import threading
 import time
-from urllib.parse import urlsplit
 
 from PySide6.QtCore import QObject, QTimer, Signal, Slot, Qt
 from onvif_control import Client, direction_valid
-from ptz_metadata import defaults, from_client, validated
+from ptz_metadata import defaults, from_client, validated, supported_target, control_port
 from ptz_timing import DirectionTiming
 from ptz_transport import MotionAttempt
 
@@ -16,20 +14,13 @@ from ptz_transport import MotionAttempt
 def camera_key(camera):
     if not camera:
         return None
-    return (camera.get('id'), camera.get('url', ''))
+    return (camera.get('id'), camera.get('url', ''), control_port(camera))
 
 
 def eligible(camera):
     if not camera or not camera.get('enabled', True) or camera.get('connection_locked'):
         return False
-    try:
-        parts = urlsplit(camera.get('url', ''))
-        address = ipaddress.ip_address(parts.hostname)
-        return (parts.scheme == 'rtsp' and address.version == 4 and address.is_private
-                and not any((address.is_loopback, address.is_link_local, address.is_multicast,
-                             address.is_unspecified, address.is_reserved)))
-    except (TypeError, ValueError):
-        return False
+    return supported_target(camera)
 
 
 def delivery_failed(result):
@@ -119,8 +110,10 @@ class DirectionControl(QObject):
 
     def make_client(self, camera):
         info = self.hints(camera)
-        client = Client({'url': camera['url']})
+        client = Client(camera)
         client.ptz_path, client.ptz_port, client.profile_token = info['path'], info['port'], info['profile']
+        if 'control_port' in camera:
+            client.ptz_port = control_port(camera)
         return client
 
     def discover(self, camera, force=False):
@@ -147,7 +140,7 @@ class DirectionControl(QObject):
         def run():
             info = None
             try:
-                client = Client({'url': camera['url']})
+                client = Client(camera)
                 if client.discover().get('profile_verified'):
                     info = from_client(client, camera)
                     info['lookup_result'] = 'supported'
@@ -251,7 +244,7 @@ class DirectionControl(QObject):
             self.repeat_request = None
             return
         remaining = .6 - (self.clock() - self.last_dispatch.get(self.target, float('-inf')))
-        if remaining > 0:
+        if remaining > .000001:
             self.dispatch_timer.start(max(1, math.ceil(remaining * 1000)))
             return
         with self.jobs_lock:

@@ -30,11 +30,11 @@ from menu_labels import (CAMERAS, TOPMOST, LAYOUT, OPACITY, fullscreen_name, men
                          topmost_name, master_mute_name, hardware_name)
 from volume_popup import VolumePopup
 from hover_tips import HoverTips
-from ptz_control import DirectionControl
+from ptz_control import DirectionControl, camera_key
 from ptz_metadata import validated as validated_control, binding as control_binding
 from direction_popup import DirectionPopup
 
-VERSION = '1.1.0-dev.5'
+VERSION = '1.1.0-dev.6'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -1080,7 +1080,7 @@ class PlayerWindow(QWidget):
     def store_control_metadata(self, key, hints):
         if self.closing:
             return
-        camera = next((c for c in self.config['cameras'] if (c['id'], c['url']) == key), None)
+        camera = next((c for c in self.config['cameras'] if camera_key(c) == key), None)
         if camera is not None:
             checked = validated_control(hints, camera)
             if checked and checked != camera.get('ptz'):

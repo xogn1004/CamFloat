@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QApplication
 
 from onvif_control import pulse
 from ptz_metadata import defaults, validated, binding
-from ptz_control import DirectionControl, eligible
+from ptz_control import DirectionControl, eligible, camera_key
 from camera_model import default_config, new_camera, normalize, save_config, data_path
 from camera_archive import encode, decode
 
@@ -83,10 +83,12 @@ class DirectionControlTests(unittest.TestCase):
             QTest.qWait(10)
         self.fail(f'Expected {state}, got {self.control.state}')
 
-    def test_eligibility_rejects_public_loopback_names_and_disabled(self):
+    def test_eligibility_allows_public_and_ddns_but_not_unusable_addresses(self):
         self.assertTrue(eligible(self.camera))
-        for url in ('rtsp://127.0.0.1/onvif1', 'rtsp://example.com/onvif1',
-                    'file:///sample.mp4', 'bad', 'rtsp://' + str(ipaddress.IPv4Address(0x08080808))):
+        for url in ('rtsp://example.com/onvif1', f'rtsp://{str(ipaddress.IPv4Address(0x08080808))}/onvif1'):
+            self.assertTrue(eligible(dict(self.camera, url=url)))
+        for url in ('rtsp://127.0.0.1/onvif1', 'rtsp://localhost/onvif1', 'rtsp://example.com:0/onvif1',
+                    'file:///sample.mp4', 'bad', 'rtsp://[::1]/onvif1'):
             self.assertFalse(eligible(dict(self.camera, url=url)))
         self.assertFalse(eligible(dict(self.camera, enabled=False)))
         self.assertFalse(eligible(dict(self.camera, connection_locked=True)))
@@ -156,7 +158,7 @@ class DirectionControlTests(unittest.TestCase):
             self.control.prepare(self.camera)
             self.assertTrue(self.control.lookup_done.wait(1))
             self.app.processEvents()
-            self.assertTrue(self.control.cache[(self.camera['id'], self.camera['url'])]['checked'])
+            self.assertTrue(self.control.cache[camera_key(self.camera)]['checked'])
             self.control.cancel()
             self.control.prepare(self.camera)
             self.assertEqual(query.call_count, 1)
@@ -224,6 +226,38 @@ class DirectionControlTests(unittest.TestCase):
                 self.assertEqual(self.control.last_reply, response)
                 self.assertEqual(self.control.hints(camera), camera['ptz'])
                 query.assert_not_called()
+
+    def test_control_port_changes_binding_target_and_discovery_client(self):
+        first = dict(self.camera, control_port=25554)
+        first['ptz'] = dict(defaults(first), checked=True)
+        second = dict(first, control_port=25555)
+        self.assertNotEqual(binding(first), binding(second))
+        self.assertNotEqual(camera_key(first), camera_key(second))
+        self.assertIsNone(validated(first['ptz'], second))
+        self.control.prepare(first)
+        self.assertEqual(self.control.client.ptz_port, 25554)
+        self.control.prepare(second)
+        self.assertEqual(self.control.client.ptz_port, 25555)
+        self.control.done.wait(1)
+
+    def test_control_port_settings_roundtrip_and_old_default(self):
+        camera = new_camera('Synthetic', self.camera['url'])
+        camera['control_port'] = 25554
+        camera['ptz'] = dict(defaults(camera), checked=True)
+        config = default_config()
+        config['cameras'] = [camera]
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, CAMFLOAT_DATA_DIR=folder):
+            save_config(config)
+            loaded = normalize(json.loads(data_path().read_text(encoding='utf-8')), encrypted=True)['cameras'][0]
+            self.assertEqual(loaded['control_port'], 25554)
+            self.assertEqual(loaded['ptz']['port'], 25554)
+        old = dict(camera)
+        old.pop('control_port')
+        self.assertEqual(normalize({'cameras': [old]})['cameras'][0]['control_port'], 5000)
+        old['ptz'] = dict(defaults(old), port=8080, checked=True, source='device')
+        upgraded = normalize({'cameras': [old]})['cameras'][0]
+        self.assertEqual(upgraded['control_port'], 8080)
+        self.assertEqual(validated(upgraded['ptz'], upgraded)['port'], 8080)
 
     def test_metadata_is_encrypted_in_settings_and_not_exported(self):
         camera = new_camera('Synthetic', self.camera['url'])

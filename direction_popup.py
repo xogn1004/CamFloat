@@ -99,7 +99,7 @@ class DirectionPopup(QFrame):
                    'send_limit': '응답이 지연돼\n조작을 멈췄습니다',
                    'error': '조작 연결 실패\n닫고 다시 열어주세요',
                    'move_error': '카메라 연결을\n확인해 주세요',
-                   'local_only': '내부망 카메라에서\n사용할 수 있습니다'}.get(state, '')
+                   'local_only': '이 주소에서는\n조작할 수 없습니다'}.get(state, '')
         self.status.setText(message)
         if message:
             self.end_move()
