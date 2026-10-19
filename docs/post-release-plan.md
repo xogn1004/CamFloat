@@ -60,12 +60,12 @@
 
 **직접 시험:** 프로젝트 루트의 `camera-control-test.bat`을 실행하고 카메라 번호를 선택합니다.
 
-1. Enter는 한쪽, R은 반대쪽으로 3초 카운트다운 후 이동 요청을 보냅니다. 반전 설정에 따라 실제 좌우 방향은 달라질 수 있습니다.
+1. Enter/R은 좌우 양방향, U/D는 상하 양방향입니다. 기본 3초 대기 후 이동 요청을 보내며 `camera-control-test.bat --delay 10`으로 대기 시간을 지정할 수 있습니다(0~300초). 반전 설정에 따라 실제 방향은 달라질 수 있습니다. 상하 시험은 도구에 추가했지만 실제 기기에서는 아직 수행하지 않았습니다.
 2. 0.2초 뒤 별도 연결로 `Stop`을 보내고 마지막 정지도 시도합니다. `ContinuousMove`에는 기기 시간 제한 0.25초도 지정합니다. 기기의 제한·정지 준수는 미확인이므로 렌즈를 보며 시험하고, 멈추지 않으면 제조사 앱에서 정지합니다.
 3. Y는 실제로 움직이고 멈춤, N은 움직임 없음, Enter는 미확인입니다. S는 정지 요청, N은 입력 단계에 따라 다른 연결 경로 선택, Q는 종료입니다.
 4. `camera-control-test.bat --probe`는 기능 조회만 수행하며 이동·정지 요청을 보내지 않습니다. 기능·프로필 조회에 실패하면 수동 시험도 이동 요청을 보내지 않습니다.
 
-새 결과는 로컬 `verification/current/camera-control/onvif-manual-latest.json`에 번호·통신 결과·관찰 결과만 기록합니다. 조회 전용 결과는 `onvif-probe-latest.json`에 분리해 수동 시험 기록을 덮어쓰지 않습니다. 주소·계정·비밀번호·프로필 토큰·영상·음성은 결과에 넣지 않습니다. 회전 시험 도구는 등록 정보와 저장 위치 설정을 바꾸지 않으며 앱과 공개 배포 EXE에는 제어 기능을 넣지 않았습니다. `check.bat ptz`는 두 시험 도구를 가상 기기로 검사하며 실제 기기에 접속하지 않습니다.
+새 결과는 로컬 `verification/current/camera-control/onvif-manual-latest.json`에 번호·이동 축·통신 결과·관찰 결과만 기록합니다. 새 실행도 이전 정상 기록을 읽어 최근 50개를 보존합니다. 조회 전용 결과는 `onvif-probe-latest.json`에 분리해 수동 시험 기록을 덮어쓰지 않습니다. 주소·계정·비밀번호·프로필 토큰·영상·음성은 결과에 넣지 않습니다. 회전 시험 도구는 등록 정보와 저장 위치 설정을 바꾸지 않으며 앱과 공개 배포 EXE에는 제어 기능을 넣지 않았습니다. `check.bat ptz`는 두 시험 도구를 가상 기기로 검사하며 실제 기기에 접속하지 않습니다. 상하 단일 축·기기 시간 제한·정지 예약·중단 시 정지·기록 보존 등을 포함해 25개 검사를 통과했습니다. 이것은 상하 실물 검증을 대신하지 않습니다.
 
 ### 렌즈 숨기기·복원
 
@@ -92,6 +92,16 @@ APK와 분석 결과는 Git에서 제외된 `verification/current/android-app`�
 - **말하기:** Reoqoo의 `GwIotLiveIntercom`은 IoTVideo `IIntercom.startIntercom`과 `endIntercom`을 사용합니다. 초기 설정은 AMR·8 kHz·160샘플 프레임·모노이며, 입력 비트 폭은 16입니다. 네이티브 통로는 `libiotvideomulti.so`의 JNI로 이어집니다. 앞서 시험한 RTSP 확장 PCM 후보와 같은 전송 방식이라고 볼 근거가 없습니다. 이 발견은 이전 테스트음의 미검출 원인을 확정하거나 실제 스피커 재생을 증명하지 않습니다.
 
 정적 호출 경로와 모델 설정은 확보했지만 현재 펌웨어에서 실제 선택되는 분기·세션 인증·전송 패킷·복원 동작은 남아 있습니다. Android 라이브러리를 Windows EXE에 그대로 넣을 수는 없습니다. 다음 단계는 해당 모델의 SDK·프로토콜과 실제 명령·응답을 대조하는 것입니다. 앱 내부 계정 데이터나 키를 추출하지 않았고, 휴대폰에 캡처 앱·인증서·VPN을 설치하거나 설정하지 않았습니다.
+
+#### 전용 인증·저장 위치 후속 조사
+
+- **인증 경계:** `IoTSdkInitMgr.registerSdk`는 `accessId`·`accessToken`을 받아 `IoTVideoInitializer.register` → `IoTVideoInnerInitializer.nativeRegister`로 전달합니다. 제어 속성 쓰기는 `MessageMgrInternal.nExecuteModelCmd`로 이어집니다. 현재 확보한 제조사 앱 경로는 RTSP 계정만으로 직접 호출하는 API가 아닙니다. 토큰 값·휴대폰 계정 정보는 읽거나 복사하지 않았습니다.
+- **저장과 이동 구분:** 위치 저장은 `ProWritable.presetPos` 속성 쓰기입니다. 앱 데이터 형식에는 `pos1`~`pos6` 슬롯과 위치별 `enable`·`posId`·`posName`·`x`·`y` 필드가 있습니다. 이는 앱의 데이터 구조이며 C500GS의 실제 지원 개수·저장된 위치를 확인한 것은 아닙니다. `OperationFragmentCmd.usePreset`의 이동은 위치 식별자를 별도 데이터 메시지에 담아 `IPluginPlayer.sendUserData`로 전달합니다. 저장 명령을 이동 명령으로 시험하지 않습니다.
+- **Windows 경로:** 설치된 ipTIME CAM Multi 뷰어 1.30의 프로그램 폴더에는 libVLC·FFmpeg 계열 바이너리가 있고, 이 설치에서 IoTVideo 전용 Windows SDK는 찾지 못했습니다. [ipTIME 공식 답변](https://iptime.com/support/qna/892695)도 C500GS의 멀티뷰어 PTZ 미지원을 설명합니다. [Tencent의 기존 공식 개발자 문서](https://main.qcloudimg.com/raw/document/product/pdf/1131_42171_cn.pdf)는 PC SDK를 별도 제공하는 경로를 안내하지만, 현재 C500GS와 호환되는 Windows x64 패키지를 확보하거나 검증하지 못했습니다.
+- **유사 공개 구현:** [Cryze](https://github.com/carTloyal123/cryze)·[Cryze v2](https://github.com/xerootg/cryze_v2)는 다른 제조사의 Gwell 기기용 조사 단서입니다. Android/ARM 라이브러리와 별도 실행 환경에 의존하므로 CamFloat에 바로 사용할 Windows SDK로 취급하지 않습니다. 해당 코드를 실행·통합하거나 네트워크 설정을 바꾸지 않았습니다.
+- **추가 로컬 조회:** 등록된 내부망 기기 한 대에서 `GetServices`는 정상 SOAP 응답을 받았지만, 반환 목록은 이벤트 네임스페이스를 장치 서비스 경로에 연결한 항목 하나였습니다. 앞선 기능 정보와 서비스 분류가 일관되지 않습니다. 장치·PTZ의 `GetServiceCapabilities` 두 요청은 모두 응답 없이 종료됐습니다. 원문 주소·자격 증명 없이 `verification/current/camera-control/onvif-service-probe.json`에 기록했습니다. 이 조회에서는 렌즈 이동·저장 위치 변경·음성 전송을 하지 않았습니다.
+
+**다음 외부 확인 사항:** ipTIME에 C500GS·펌웨어 37.0.161의 로컬 제어 문서 또는 Windows x64용 SDK 제공 여부를 확인합니다. 필요한 범위는 렌즈 숨김/복원·저장 위치 조회/이동·양방향 음성과, 사용자 계정으로 접근 토큰을 발급받는 공식 절차입니다. 해당 경로를 확보하기 전에는 추측한 바이너리 명령이나 잘못된 인증으로 제어를 반복하지 않습니다. 현재 도구에서 다음으로 확인 가능한 것은 사용자 관찰을 동반한 상하 회전 시험입니다.
 
 ### 말하기 전송 경로 조사
 

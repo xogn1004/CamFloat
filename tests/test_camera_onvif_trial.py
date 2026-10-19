@@ -1,6 +1,8 @@
 """ONVIF metadata, digest and bounded-move tool checks without live devices."""
 import base64
+from contextlib import redirect_stderr, redirect_stdout
 import hashlib
+import io
 import json
 import tempfile
 from pathlib import Path
@@ -36,6 +38,19 @@ class ONVIFTrialTests(unittest.TestCase):
         for op in ('SystemReboot', 'SetPreset', 'SetConfiguration'):
             with self.assertRaises(ValueError):
                 trial.envelope(urlsplit(self.camera['url']), trial.DEVICE, op)
+
+    def test_vertical_motion_moves_only_tilt_with_same_device_timeout(self):
+        for sign in (-1, 1):
+            root = ET.fromstring(trial.envelope(urlsplit(self.camera['url']), trial.PTZ,
+                                                'ContinuousMove', 'token', 0, sign))
+            self.assertEqual(root.find('.//{' + trial.SCHEMA + '}PanTilt').attrib, {'x': '0', 'y': str(sign)})
+            self.assertEqual(root.find('.//{' + trial.SCHEMA + '}Zoom').get('x'), '0')
+            self.assertEqual(root.find('.//{' + trial.PTZ + '}Timeout').text, 'PT0.25S')
+
+    def test_diagonal_zero_and_out_of_range_movement_rejected(self):
+        for pan, tilt in ((1, 1), (0, 0), (0, 2), (2, 0), (None, 1), (True, 0), (1.0, 0)):
+            with self.subTest(pan=pan, tilt=tilt), self.assertRaises(ValueError):
+                trial.envelope(urlsplit(self.camera['url']), trial.PTZ, 'ContinuousMove', 'token', pan, tilt)
 
     def test_preset_query_requires_profile_but_does_not_change_it(self):
         with self.assertRaises(ValueError):
@@ -97,7 +112,7 @@ class ONVIFTrialTests(unittest.TestCase):
     def test_stop_runs_after_disconnect_during_movement(self):
         calls = []
         class Client:
-            def control(self, operation, pan=None, on_sent=None):
+            def control(self, operation, pan=None, on_sent=None, tilt=0):
                 calls.append(operation)
                 if on_sent:
                     on_sent()
@@ -110,7 +125,7 @@ class ONVIFTrialTests(unittest.TestCase):
     def test_final_stop_on_interrupted_move(self):
         calls = []
         class Client:
-            def control(self, operation, pan=None, on_sent=None):
+            def control(self, operation, pan=None, on_sent=None, tilt=0):
                 calls.append(operation)
                 if operation == 'ContinuousMove':
                     on_sent()
@@ -119,6 +134,42 @@ class ONVIFTrialTests(unittest.TestCase):
         with self.assertRaises(KeyboardInterrupt):
             trial.pulse(Client(), 1)
         self.assertEqual(calls.count('Stop'), 2)
+
+    def test_vertical_pulse_preserves_stop_requests_and_axis_evidence(self):
+        calls = []
+        class Client:
+            def control(self, operation, pan=None, on_sent=None, tilt=0):
+                calls.append((operation, pan, tilt))
+                if on_sent:
+                    on_sent()
+                return {'request_sent': True, 'response_verified': False}
+        result = trial.pulse(Client(), 0, -1)
+        self.assertEqual(calls[0], ('ContinuousMove', 0, -1))
+        self.assertEqual([op for op, _, _ in calls].count('Stop'), 2)
+        self.assertEqual((result['pan_sign'], result['tilt_sign']), (0, -1))
+        self.assertEqual(result['physical_result'], 'unconfirmed')
+
+    def test_new_session_keeps_previous_physical_observations(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(trial, 'ROOT', Path(folder)):
+            evidence = {'camera_number': 1, 'physical_result': 'moved_and_stopped'}
+            trial.save([evidence])
+            class Client:
+                def __init__(self, camera): pass
+                def discover(self): return {'profile_verified': False}
+            with patch.object(trial, 'load_cameras', return_value=[self.camera]), \
+                    patch.object(trial, 'Client', Client), patch('builtins.input', return_value='1'), \
+                    redirect_stdout(io.StringIO()):
+                self.assertEqual(trial.main([]), 1)
+            self.assertEqual(trial.previous_results()[0], evidence)
+            self.assertEqual(len(trial.previous_results()), 2)
+
+    def test_invalid_delay_rejected_before_camera_access(self):
+        for value in ('-1', '301', 'abc'):
+            with self.subTest(value=value), patch.object(trial, 'load_cameras') as load, \
+                    redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                trial.main(['--delay', value])
+            self.assertEqual(error.exception.code, 2)
+            load.assert_not_called()
 
     def test_probe_report_preserves_manual_motion_observations(self):
         with tempfile.TemporaryDirectory() as folder, patch.object(trial, 'ROOT', Path(folder)):

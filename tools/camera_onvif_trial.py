@@ -45,8 +45,13 @@ def element(parent, namespace, name, text=None, **attributes):
     return child
 
 
-def envelope(parts, namespace, operation, profile_token=None, pan=None):
-    if operation not in ALLOWED or (pan is not None and pan not in (-1, 1)):
+def direction_valid(pan, tilt):
+    return (type(pan) is int and type(tilt) is int
+            and (pan, tilt) in ((-1, 0), (1, 0), (0, -1), (0, 1)))
+
+
+def envelope(parts, namespace, operation, profile_token=None, pan=None, tilt=0):
+    if operation not in ALLOWED or (pan is not None and not direction_valid(pan, tilt)) or (pan is None and tilt != 0):
         raise ValueError('Unsupported request')
     root = ET.Element(ET.QName(SOAP, 'Envelope'))
     header = element(root, SOAP, 'Header')
@@ -69,10 +74,10 @@ def envelope(parts, namespace, operation, profile_token=None, pan=None):
         element(op, PTZ, 'PanTilt', 'true')
         element(op, PTZ, 'Zoom', 'false')
     if operation == 'ContinuousMove':
-        if pan not in (-1, 1):
+        if not direction_valid(pan, tilt):
             raise ValueError('Direction required')
         velocity = element(op, PTZ, 'Velocity')
-        element(velocity, SCHEMA, 'PanTilt', x=str(pan), y='0')
+        element(velocity, SCHEMA, 'PanTilt', x=str(pan), y=str(tilt))
         element(velocity, SCHEMA, 'Zoom', x='0')
         # Device-side bound plus an independent explicit Stop request below.
         element(op, PTZ, 'Timeout', 'PT0.25S')
@@ -95,8 +100,8 @@ class Client:
         self.profile_token = None
         self.ptz_path = None
 
-    def call(self, path, namespace, operation, pan=None, on_sent=None):
-        body = envelope(self.parts, namespace, operation, self.profile_token, pan)
+    def call(self, path, namespace, operation, pan=None, on_sent=None, tilt=0):
+        body = envelope(self.parts, namespace, operation, self.profile_token, pan, tilt)
         connection = self.connection_factory(self.parts.hostname, 5000, timeout=1)
         result = {'operation': operation, 'response_verified': False, 'request_sent': False}
         root = None
@@ -158,16 +163,16 @@ class Client:
                     return report
         return report
 
-    def control(self, operation, pan=None, on_sent=None):
+    def control(self, operation, pan=None, on_sent=None, tilt=0):
         if not self.ptz_path or not self.profile_token:
             raise ValueError('Discovery required')
-        return self.call(self.ptz_path, PTZ, operation, pan, on_sent)[0]
+        return self.call(self.ptz_path, PTZ, operation, pan, on_sent, tilt=tilt)[0]
 
 
-def pulse(client, pan):
-    if pan not in (-1, 1):
+def pulse(client, pan, tilt=0):
+    if not direction_valid(pan, tilt):
         raise ValueError('Unsupported direction')
-    result = {'pan_sign': pan, 'requested_ms': 200, 'device_timeout_ms': 250, 'physical_result': 'unconfirmed'}
+    result = {'pan_sign': pan, 'tilt_sign': tilt, 'requested_ms': 200, 'device_timeout_ms': 250, 'physical_result': 'unconfirmed'}
     def stop():
         result['timed_stop'] = client.control('Stop')
     timer = threading.Timer(.2, stop)
@@ -177,7 +182,7 @@ def pulse(client, pan):
         timer.start()
         started = True
     try:
-        result['move'] = client.control('ContinuousMove', pan, on_sent=sent)
+        result['move'] = client.control('ContinuousMove', pan, on_sent=sent, tilt=tilt)
     finally:
         try:
             if started:
@@ -194,10 +199,24 @@ def save(results, probe=False):
     (folder / filename).write_text(json.dumps(results[-50:], indent=2) + '\n', encoding='utf-8')
 
 
+def previous_results():
+    path = ROOT / 'verification/current/camera-control/onvif-manual-latest.json'
+    try:
+        if path.stat().st_size > 1024 * 1024:
+            return []
+        result = json.loads(path.read_text(encoding='utf-8'))
+        return result[-50:] if isinstance(result, list) and all(isinstance(row, dict) for row in result) else []
+    except (OSError, ValueError):
+        return []
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description='카메라 ONVIF 회전 시험')
     parser.add_argument('--probe', action='store_true', help='기능 조회만 수행. 이동·정지 요청 없음')
+    parser.add_argument('--delay', type=int, default=3, help='이동 전 대기 시간, 0~300초 (기본 3초)')
     args = parser.parse_args(argv)
+    if not 0 <= args.delay <= 300:
+        parser.error('대기 시간은 0~300초로 입력하세요.')
     cameras = load_cameras()
     if args.probe:
         reports = [{'camera_number': c['number'], **Client(c).discover()} for c in cameras]
@@ -214,7 +233,8 @@ def main(argv=None):
         return 0
     client = Client(camera)
     discovered = client.discover()
-    results = [{'camera_number': camera['number'], 'discovery': discovered}]
+    results = previous_results()
+    results.append({'camera_number': camera['number'], 'discovery': discovered})
     save(results)
     if not discovered.get('profile_verified'):
         print('회전 제어 정보를 확인하지 못했습니다. 이동 요청은 보내지 않았습니다.')
@@ -225,9 +245,10 @@ def main(argv=None):
     print('0.2초 뒤 정지를 요청합니다. 멈추지 않으면 제조사 앱에서 정지하세요.')
     print('기기가 응답 없이 연결을 끊을 수 있으므로 실제 움직임을 확인해야 합니다.')
     print('렌즈 반전 설정에 따라 이동 방향이 다를 수 있습니다.')
+    print(f'이동 전 {args.delay}초 대기합니다. 상하 방향은 아직 실제 동작 미확인입니다.')
     while True:
         print(f'\n연결 경로 {path_index + 1}/{len(paths)}')
-        choice = input('Enter: 한쪽 이동 / R: 반대쪽 / S: 정지 / N: 다른 경로 / Q: 종료 > ').strip().casefold()
+        choice = input('Enter/R: 좌우 양방향 / U/D: 상하 양방향 / S: 정지 / N: 다른 경로 / Q: 종료 > ').strip().casefold()
         if choice == 'q':
             return 0
         if choice == 'n':
@@ -240,12 +261,15 @@ def main(argv=None):
             save(results)
             print('정지 응답 확인' if status['response_verified'] else '정지 요청 완료. 응답은 확인되지 않아 실제 상태를 확인하세요.')
             continue
-        if choice not in ('', 'r'):
+        directions = {'': (-1, 0), 'r': (1, 0), 'u': (0, 1), 'd': (0, -1)}
+        if choice not in directions:
             continue
-        for seconds in (3, 2, 1):
-            print(f'{seconds}...', flush=True)
+        for seconds in range(args.delay, 0, -1):
+            if seconds <= 5 or seconds % 10 == 0:
+                print(f'{seconds}...', flush=True)
             time.sleep(1)
-        result = pulse(client, -1 if choice == '' else 1)
+        pan, tilt = directions[choice]
+        result = pulse(client, pan, tilt)
         result.update(camera_number=camera['number'], path_index=path_index + 1)
         results.append(result)
         save(results)
