@@ -36,10 +36,12 @@ from camfloat.hover_tips import HoverTips
 from camfloat.ptz_control import DirectionControl, camera_key
 from camfloat.ptz_metadata import validated as validated_control, binding as control_binding
 from camfloat.direction_popup import DirectionPopup
+from camfloat.screenshots import Screenshots
+from camfloat.screenshot_notice import ScreenshotNotice
 
 STARTUP.mark('imports_ready')
 
-VERSION = '1.1.0'
+VERSION = '1.1.1-dev.1'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -242,6 +244,7 @@ class InputOverlay(QWidget):
             self.tips.add(item)
             return item
         self.reload = button('refresh', tooltip('이 영상 다시 연결', 'Ctrl+R'), lambda: self.host.reconnect(self.index))
+        self.snapshot = button('snapshot', '스크린샷 저장', lambda: self.host.take_screenshot(self.index))
         self.move_camera = button('move_camera', '카메라 이동', self.toggle_direction_panel)
         self.move_camera.setCheckable(True)
         self.move_camera.setStyleSheet(self.move_camera.styleSheet() +
@@ -260,6 +263,7 @@ class InputOverlay(QWidget):
         self.value.setFixedWidth(23)
         self.value.setStyleSheet('background:transparent;')
         row.addWidget(self.reload)
+        row.addWidget(self.snapshot)
         row.addWidget(self.mute)
         row.addWidget(self.volume)
         row.addWidget(self.value)
@@ -284,6 +288,7 @@ class InputOverlay(QWidget):
         self.idle_timer.timeout.connect(self.hide_idle_controls)
         self.volume_popup = VolumePopup(self)
         self.direction_popup = DirectionPopup(self)
+        self.screenshot_notice = ScreenshotNotice(self)
         self.host.direction_control.changed.connect(self.direction_popup.update_state)
 
     def toggle_direction_panel(self):
@@ -387,10 +392,14 @@ class InputOverlay(QWidget):
             self.volume_popup.hide()
         self.volume.setVisible(expanded)
         self.value.setVisible(expanded)
-        width = 261 if expanded else 138
-        self.bar.layout().setSpacing(3 if expanded else 2)
-        for item in (self.reload, self.mute, self.move_camera, self.choose, self.fullscreen):
-            item.setFixedSize(26 if expanded else 24, 26)
+        narrow = self.width() < 180
+        button_width = 26 if expanded else (20 if narrow else 24)
+        spacing = 3 if expanded else (1 if narrow else 2)
+        self.bar.layout().setSpacing(spacing)
+        width = 6 * button_width + 10 + spacing * (8 if expanded else 5) + (87 if expanded else 0)
+        for item in (self.reload, self.snapshot, self.mute, self.move_camera, self.choose, self.fullscreen):
+            item.setFixedSize(button_width, 26)
+            item.setIconSize(QSize(16 if narrow else 17, 16 if narrow else 17))
         self.bar.setGeometry(max(5, self.width() - width - 8), max(4, self.height() - 40), width, 32)
         self.previous.move(10, max(48, (self.height() - 40) // 2))
         self.following.move(max(10, self.width() - 42), max(48, (self.height() - 40) // 2))
@@ -430,6 +439,7 @@ class InputOverlay(QWidget):
         self.previous.setAccessibleName(self.previous.toolTip())
         self.following.setAccessibleName(self.following.toolTip())
         self.reload.setEnabled(bool(camera) and not camera.get('connection_locked'))
+        self.snapshot.setEnabled(self.host.screenshot_ready(self.index))
         self.move_camera.setEnabled(bool(camera) and not camera.get('connection_locked'))
         if hasattr(self, 'direction_popup'):
             self.direction_popup.update_state()
@@ -569,6 +579,10 @@ class PlayerWindow(QWidget):
         self.fullscreen_entry_layout = None
         self.save_error_reported = False
         self.tiles = []
+        self.screenshots = Screenshots(self)
+        self.screenshots.changed.connect(self.refresh_screenshot_button)
+        self.screenshots.saved.connect(self.screenshot_saved)
+        self.screenshots.failed.connect(self.screenshot_failed)
         self.direction_control = DirectionControl(self, version=VERSION, diagnostics_enabled=persist)
         self.direction_control.metadata_ready.connect(self.store_control_metadata)
         self.setWindowTitle(APP_TITLE + (
@@ -865,6 +879,7 @@ class PlayerWindow(QWidget):
         if not self.closing:
             self.persist()
             self.closing = True
+            self.screenshots.close()
             self.close_direction_panels()
             self.direction_control.shutdown()
             self.status_timer.stop()
@@ -1141,6 +1156,8 @@ class PlayerWindow(QWidget):
         self.persist()
 
     def update_status(self):
+        for index in range(len(self.tiles)):
+            self.refresh_screenshot_button(index)
         for index, tile in enumerate(self.tiles[:self.config['layout']]):
             camera = self.camera_for_slot(index)
             if not camera or tile.current_key is None:
@@ -1196,6 +1213,42 @@ class PlayerWindow(QWidget):
         if camera and not camera.get('connection_locked'):
             self.tiles[index].retry_count = 0
             self.tiles[index].start_attempt(camera, reset=True)
+
+    def screenshot_ready(self, index):
+        camera = self.camera_for_slot(index)
+        if self.closing or camera is None or camera.get('connection_locked') or index in self.screenshots.pending:
+            return False
+        tile = self.tiles[index]
+        worker = tile.worker
+        if worker.busy or worker.done.is_set() or worker.closing or worker.error or tile.initial_failed:
+            return False
+        return worker.phase == 'playing' and bool(tile.player.is_playing()) and tile.player.has_vout() > 0
+
+    def refresh_screenshot_button(self, index):
+        if not self.closing and 0 <= index < len(self.tiles):
+            self.tiles[index].overlay.snapshot.setEnabled(self.screenshot_ready(index))
+
+    def take_screenshot(self, index):
+        if not self.screenshot_ready(index):
+            return False
+        return self.screenshots.capture(index, self.tiles[index].worker)
+
+    def screenshot_saved(self, index, path):
+        if not self.closing:
+            self.tiles[index].overlay.screenshot_notice.display(saved=True)
+
+    def screenshot_failed(self, index):
+        if not self.closing:
+            self.tiles[index].overlay.screenshot_notice.display(saved=False)
+
+    def open_screenshot_folder(self):
+        if self.closing:
+            return False
+        if self.screenshots.open_folder():
+            return True
+        with self.modal():
+            QMessageBox.warning(self, APP_NAME, '스크린샷 폴더를 열지 못했습니다. 사진 폴더의 권한을 확인하세요.')
+        return False
 
     def single_view(self, index):
         if (self.config['layout'] == 1 or not 0 <= index < self.config['layout']
@@ -1394,6 +1447,8 @@ class PlayerWindow(QWidget):
             mute.setChecked(camera['muted'])
             mute.triggered.connect(lambda: self.toggle_mute(index))
             menu.addAction(icon('refresh'), menu_text('이 영상 다시 연결', 'Ctrl+R'), lambda: self.reconnect(index))
+            snapshot = menu.addAction(icon('snapshot'), '스크린샷 저장', lambda: self.take_screenshot(index))
+            snapshot.setEnabled(self.screenshot_ready(index))
             move = menu.addAction(icon('move_camera'), '카메라 이동', self.tiles[index].overlay.toggle_direction_panel)
             move.setEnabled(not camera.get('connection_locked'))
             if self.config['layout'] > 1:
@@ -1453,6 +1508,7 @@ class PlayerWindow(QWidget):
         opacity_menu.addAction(action)
         opacity_menu.addAction(menu_text('불투명하게 복원', 'Ctrl+0'), lambda: self.set_opacity(100))
         menu.addSeparator()
+        menu.addAction(icon('folder'), '스크린샷 폴더 열기', self.open_screenshot_folder)
         menu.addAction(icon('help'), menu_text('사용법 / 정보', 'F1'), self.show_help)
         menu.addAction(icon('minimize'), '최소화', self.showMinimized)
         menu.addAction(icon('close'), menu_text('종료', 'Alt+F4'), self.close)

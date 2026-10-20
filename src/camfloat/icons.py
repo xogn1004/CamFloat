@@ -19,6 +19,17 @@ def icon(name, color='#e1eaf8'):
     if name == 'refresh':
         painter.drawArc(QRectF(5, 5, 14, 14), 35 * 16, 285 * 16)
         line(19, 4, 19, 9); line(19, 9, 14, 9)
+    elif name == 'snapshot':
+        painter.drawRoundedRect(QRectF(3, 4, 18, 16), 2, 2)
+        painter.drawEllipse(QRectF(6, 7, 3, 3))
+        painter.drawPolyline(QPolygonF([QPointF(4, 18), QPointF(10, 12), QPointF(13, 15),
+                                       QPointF(16, 11), QPointF(20, 16)]))
+    elif name == 'folder':
+        path = QPainterPath(QPointF(3, 8))
+        for x, y in ((3, 5), (10, 5), (12, 8), (21, 8), (21, 19), (3, 19), (3, 8)):
+            path.lineTo(x, y)
+        painter.drawPath(path)
+        line(3, 10, 21, 10)
     elif name in ('camera', 'cameras'):
         painter.drawRoundedRect(QRectF(3, 6, 13, 12), 2, 2)
         painter.drawPolygon(QPolygonF([QPointF(16, 10), QPointF(21, 7), QPointF(21, 17), QPointF(16, 14)]))

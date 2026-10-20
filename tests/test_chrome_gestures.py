@@ -146,7 +146,8 @@ class ChromeGestures(unittest.TestCase):
         overlay.reveal_controls()
         row = overlay.bar.layout()
         self.assertEqual([row.itemAt(i).widget() for i in range(row.count())],
-            [overlay.reload, overlay.mute, overlay.volume, overlay.value, overlay.move_camera, overlay.choose, overlay.fullscreen])
+            [overlay.reload, overlay.snapshot, overlay.mute, overlay.volume, overlay.value,
+             overlay.move_camera, overlay.choose, overlay.fullscreen])
         self.window.set_opacity(55)
         self.assertAlmostEqual(self.window.chrome.windowOpacity(), .55, delta=.01)
         self.window.resize(300, 180)

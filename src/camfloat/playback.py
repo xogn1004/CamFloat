@@ -21,6 +21,8 @@ class PlaybackWorker:
         self.busy = False
         self.error = False
         self.audio = (100, False)
+        self.snapshot_pending = None
+        self.snapshot_active = False
         self.done = threading.Event()
         self.thread = threading.Thread(target=self.run, name='CamFloat playback', daemon=True)
         self.thread.start()
@@ -48,14 +50,44 @@ class PlaybackWorker:
             self.closing = True
             self.condition.notify()
 
+    def request_snapshot(self, capture):
+        """Serialize a one-shot capture with stop, player replacement and release.
+
+        The callback receives None if playback changed before this job started.
+        No camera request or automatic retry is made for a snapshot.
+        """
+        with self.condition:
+            if (self.closing or self.done.is_set() or self.busy or self.error
+                    or self.phase != 'playing' or self.snapshot_pending is not None or self.snapshot_active):
+                return False
+            self.snapshot_pending = (self.revision, capture)
+            self.condition.notify()
+            return True
+
     def run(self):
         active = False
         try:
             while True:
                 with self.condition:
-                    self.condition.wait_for(lambda: self.closing or self.revision != self.handled)
+                    self.condition.wait_for(lambda: self.closing or self.revision != self.handled
+                                            or self.snapshot_pending is not None)
                     revision, request, closing = self.revision, self.pending, self.closing
                     reset = self.pending_reset
+                    snapshot, self.snapshot_pending = self.snapshot_pending, None
+                    if snapshot is not None:
+                        self.snapshot_active = True
+                if snapshot is not None:
+                    expected_revision, capture = snapshot
+                    try:
+                        capture(self.player if not closing and revision == self.handled == expected_revision
+                                and active and not self.error else None)
+                    except Exception:
+                        # A capture must never terminate playback or expose a URL.
+                        pass
+                    finally:
+                        with self.condition:
+                            self.snapshot_active = False
+                    continue
                 try:
                     if active:
                         self.phase = 'stopping'

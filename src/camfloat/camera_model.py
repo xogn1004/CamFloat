@@ -499,4 +499,4 @@ def make_vlc_instance(folder, *options):
         options = ('--aout=directsound', *options)
     # Follow VLC's default buffer. Forcing 450 ms can repeatedly display the
     # connection-time HEVC image on some cameras while counters still advance.
-    return vlc.Instance('--no-video-title-show', '--quiet', '--rtsp-tcp', *options)
+    return vlc.Instance('--no-video-title-show', '--no-snapshot-preview', '--quiet', '--rtsp-tcp', *options)

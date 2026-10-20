@@ -2,6 +2,8 @@
 
 현재 정식 버전은 **1.1.0**입니다. 이후 수정은 다음 버전의 `-dev`로 시작합니다.
 
+현재 개발 버전은 **1.1.1-dev.1**입니다. 기존 CamFloat를 종료하고 `tools/run-dev.bat`을 더블클릭하면 EXE 빌드 없이 수정한 코드를 실행합니다. 같은 카메라·설정을 사용하며, 기존 앱이 실행 중이면 그 창만 활성화합니다. 기능 확인은 이 실행 방식으로 먼저 진행하고 EXE 검사는 배포 준비 때 수행합니다.
+
 ## 환경과 빌드
 
 Windows x64와 Python 3.14를 사용합니다. PySide6·python-vlc 등 의존성 버전은 `requirements.txt`에 고정되어 있습니다.
@@ -88,6 +90,7 @@ cd CamFloat
 | 목록 파일 | `check.bat files` |
 | 분할·전체화면·도구 | `check.bat window` |
 | 시작 창·초기화·지연 로딩 | `check.bat startup` |
+| 스크린샷·저장 폴더·작은 화면 배치 | `check.bat screenshots` |
 | 첫 실행·바로가기 | `check.bat shortcuts` |
 | 방향 패널·작업 취소·카메라 대상·회전 프로토콜 (가상 기기로 검사) | `check.bat ptz` |
 | 스피커 시험 도구·시간 설정 (가상 기기로 검사) | `check.bat talkback` |
