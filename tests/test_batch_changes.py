@@ -27,11 +27,11 @@ class BatchChanges(unittest.TestCase):
         menu = self.window.build_app_menu()
         actions = [a for a in menu.actions() if not a.isSeparator()]
         names = [a.text().split('\t')[0] for a in actions]
-        self.assertEqual(names[:7], [LAYOUT, '전체 음소거', CAMERAS, '전체화면',
+        self.assertEqual(names[:8], [LAYOUT, '전체 음소거', CAMERAS, '전체화면', '창을 영상에 맞추기',
             '항상 위에', '하드웨어 가속 해제', OPACITY])
         self.assertEqual(sum('CamFloat' in name for name in names), 1)
         self.assertIn(OPACITY, names)
-        self.assertEqual(actions[4].text().split('\t')[1], 'Ctrl+T')
+        self.assertEqual(next(a for a in actions if a.text().startswith('항상 위에')).text().split('\t')[1], 'Ctrl+T')
         self.assertEqual(actions[2].text().split('\t')[1], 'Ctrl+M')
         for index in range(4):
             self.assertFalse(actions[index].icon().isNull())

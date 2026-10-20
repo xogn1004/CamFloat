@@ -1,8 +1,8 @@
 # 개발 안내
 
-현재 정식 버전은 **1.1.0**입니다. 이후 수정은 다음 버전의 `-dev`로 시작합니다.
+현재 정식 버전은 **1.1.1**입니다. 이후 수정은 다음 버전의 `-dev`로 시작합니다.
 
-현재 개발 버전은 **1.1.1-dev.2**입니다. `dev.1`은 Git 태그 `v1.1.1-dev.1`(커밋 `031023e`)로 보존합니다. 기존 CamFloat를 종료하고 `tools/run-dev.bat`을 더블클릭하면 EXE 빌드 없이 수정한 코드를 실행합니다. 같은 카메라·설정을 사용하며, 기존 앱이 실행 중이면 그 창만 활성화합니다. 기능 확인은 이 실행 방식으로 먼저 진행하고 EXE 검사는 배포 준비 때 수행합니다.
+직전 개발본은 Git 태그 `v1.1.1-dev.1`(커밋 `031023e`)과 `v1.1.1-dev.2`(커밋 `8ad80d4`)로 보존합니다. 기존 CamFloat를 종료하고 `tools/run-dev.bat`을 더블클릭하면 EXE 빌드 없이 현재 소스를 실행합니다. 같은 카메라·설정을 사용하며, 기존 앱이 실행 중이면 그 창만 활성화합니다. 기능 확인은 이 실행 방식으로 먼저 진행하고 EXE 검사는 배포 준비 때 수행합니다.
 
 ## 환경과 빌드
 
@@ -47,7 +47,8 @@ cd CamFloat
 | 파일 | 역할 |
 | --- | --- |
 | `onvif_control.py`, `ptz_control.py`, `ptz_metadata.py`, `direction_popup.py`, `ptz_transport.py`, `ptz_timing.py` | 방향 조작·제어 정보 보관·독립 응답 처리·취소/시간 제한·전송 간격 기록 |
-| `main.py`, `playback.py` | 화면 배정·확대·전체화면과 비동기 재생 작업 |
+| `main.py`, `playback.py`, `video_geometry.py` | 화면 배정·확대·전체화면·영상/창 맞춤과 비동기 재생 작업 |
+| `screenshots.py`, `screenshot_notice.py` | 원본 PNG 저장·폴더 열기·저장 알림 |
 | `chrome.py`, `native_window.py` | 상단 도구와 Windows 창·오버레이 처리 |
 | `camera_manager.py`, `camera_editor.py`, `camera_draft.py` | 관리 초안·최종 저장과 연결 정보 입력·검증 |
 | `privacy.py`, `windows_consent.py` | 항목별 가림·복사·공개 만료와 Windows 본인 확인 |
@@ -161,8 +162,8 @@ $env:VLC_HOME = Join-Path $PWD 'vendor/vlc'
 | 단계 | 예시 |
 | --- | --- |
 | 정식 공개 | `1.0.0` |
-| 다음 버전 개발 | `1.1.1-dev.2` |
-| 공개 직전 후보 | `1.1.0-rc.1` |
+| 다음 버전 개발 | `1.1.2-dev.1` |
+| 공개 직전 후보 | `1.1.2-rc.1` |
 
 같은 단계의 수정은 뒤 번호를 올립니다. 공개할 때는 접미사를 제거하고 `src/camfloat/main.py`·`packaging/version_info.txt`·태그·배포 파일을 맞춥니다. 공개일은 `CHANGELOG.md`에서만 관리합니다.
 

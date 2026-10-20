@@ -15,7 +15,7 @@ PROFILES = {
     'audio': ('test_audio_isolation',),
     'cameras': ('test_simple_registration', 'test_camera_management'),
     'files': ('test_camera_archive',),
-    'window': ('test_layout_sessions', 'test_view_ui', 'test_chrome_gestures', 'test_empty_screens'),
+    'window': ('test_layout_sessions', 'test_view_ui', 'test_chrome_gestures', 'test_empty_screens', 'test_video_geometry'),
     'shortcuts': ('test_startup_shortcuts',),
     'startup': ('test_startup_timing',),
     'screenshots': ('test_screenshots',),

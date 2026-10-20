@@ -78,10 +78,10 @@ class ReleaseRC1(unittest.TestCase):
         self.assertIn('전체 음소거 해제', chrome.master_mute.toolTip())
         menu = self.window.build_app_menu()
         entries = [a for a in menu.actions() if not a.isSeparator()]
-        self.assertEqual([a.text().split('\t')[0] for a in entries[:7]], [
-            '화면 구성', '전체 음소거 해제', '카메라 관리…', '전체화면',
+        self.assertEqual([a.text().split('\t')[0] for a in entries[:8]], [
+            '화면 구성', '전체 음소거 해제', '카메라 관리…', '전체화면', '창을 영상에 맞추기',
             '항상 위에', '하드웨어 가속 해제', '전체 투명도'])
-        self.assertTrue(all(not a.isCheckable() for a in entries[:7]))
+        self.assertTrue(all(not a.isCheckable() for a in entries[:8]))
         menu.deleteLater()
 
     def test_compact_volume_popup_bounds_wheel_and_lifecycle(self):

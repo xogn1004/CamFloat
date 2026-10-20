@@ -42,7 +42,7 @@ from camfloat.video_geometry import cover_rect, smaller_size, display_ratio
 
 STARTUP.mark('imports_ready')
 
-VERSION = '1.1.1-dev.2'
+VERSION = '1.1.1'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -1934,6 +1934,47 @@ def main():
                     window.set_volume(1, 35)
                     verify_audio([100, 35], [0, 0])
                     audio_isolation = True
+                presentation_verified = False
+                if demo:
+                    from PySide6.QtCore import QEventLoop
+                    from PySide6.QtGui import QImage
+
+                    def wait_presentation(predicate, seconds=8):
+                        deadline = time.monotonic() + seconds
+                        while time.monotonic() < deadline:
+                            if predicate():
+                                return True
+                            pause = QEventLoop(window)
+                            QTimer.singleShot(50, pause.quit)
+                            pause.exec()
+                        return bool(predicate())
+
+                    window.set_layout(1)
+                    tile = window.tiles[0]
+                    assert wait_presentation(lambda: not tile.worker.busy and tile.player.is_playing()
+                                             and tile.player.has_vout() > 0)
+                    window.resize(800, 600)
+                    app.processEvents()
+                    native_size = tile.player.video_get_size(0)
+                    revision, player_handle = tile.worker.revision, tile.worker.hwnd
+                    window.set_view_mode(0, 'fill')
+                    assert tile.video_surface.geometry().contains(tile.rect())
+                    assert tile.video_surface.geometry() != tile.rect(), 'Fill did not enlarge the sample video'
+                    window.screenshots.directory_override = data_path().parent / 'snapshots'
+                    assert window.take_screenshot(0)
+                    assert wait_presentation(lambda: not window.screenshots.pending)
+                    snapshots = list(window.screenshots.directory_override.glob('CamFloat_*.png'))
+                    assert snapshots, 'Packaged snapshot was not saved'
+                    saved_image = QImage(str(snapshots[-1]))
+                    assert (saved_image.width(), saved_image.height()) == native_size
+                    window.set_view_mode(0, 'fit')
+                    assert tile.video_surface.geometry() == tile.rect()
+                    expected = window.fitted_window_size()
+                    assert expected is not None
+                    window.fit_window_to_video()
+                    assert window.size() == expected and window.height() < 600
+                    assert (tile.worker.revision, tile.worker.hwnd) == (revision, player_handle)
+                    presentation_verified = True
                 report.update(ok=True, layouts=[1, 2, 4], topmost=True, stable_video_handles=True,
                               opacity=True, dpapi=True, vlc=True, sample_video_streams=video_streams,
                               taskbar_icon=taskbar, taskbar_system_minimize=True,
@@ -1943,7 +1984,8 @@ def main():
                               engine_from_selected_directory=bundled,
                               engine_bundled=folder.resolve() == (Path(getattr(sys, '_MEIPASS', '.')) / 'vlc').resolve(),
                               connection_probe_subprocess=probe_ok,
-                              independent_audio_verified=audio_isolation)
+                              independent_audio_verified=audio_isolation,
+                              video_fill_window_fit_original_snapshot=presentation_verified)
                 code = 0
             except Exception:
                 report['error'] = traceback.format_exc()

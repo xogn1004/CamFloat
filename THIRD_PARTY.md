@@ -29,7 +29,7 @@ libVLC DLLs and the official LGPL package's plugins are bundled unmodified in `_
 
 ## Release sources and notices
 
-The [1.0.0 release](https://github.com/xogn1004/CamFloat/releases/tag/v1.0.0)
+The [1.1.1 release](https://github.com/xogn1004/CamFloat/releases/tag/v1.1.1)
 also provides the unmodified Qt Base, Qt Image Formats, Qt SVG, PySide6/Shiboken6,
 libVLC and python-vlc source archives. They are separate developer downloads;
 they are not required to run CamFloat. Archive URLs, versions, byte sizes and
