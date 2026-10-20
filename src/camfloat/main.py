@@ -38,10 +38,11 @@ from camfloat.ptz_metadata import validated as validated_control, binding as con
 from camfloat.direction_popup import DirectionPopup
 from camfloat.screenshots import Screenshots
 from camfloat.screenshot_notice import ScreenshotNotice
+from camfloat.video_geometry import cover_rect, smaller_size, display_ratio
 
 STARTUP.mark('imports_ready')
 
-VERSION = '1.1.1-dev.1'
+VERSION = '1.1.1-dev.2'
 MENU_STYLE = '''QMenu{background:#151c27;color:#dae5f5;border:1px solid #354155;
 padding:7px;border-radius:10px;font-family:Segoe UI;font-size:12px;}
 QMenu::item{padding:7px 24px 7px 10px;border-radius:5px;}
@@ -63,12 +64,19 @@ class PlayerTile(QWidget):
         self.host, self.index, self.instance = host, index, instance
         self.setStyleSheet('background:#080b10;')
         self.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        # A fixed native child is clipped by its parent when filling the SCREEN.
+        # Resizing it never changes the decoder, stream or snapshot contents.
+        self.source_ratio = None
+        self.source_size = None
+        self.video_surface = QWidget(self)
+        self.video_surface.setAttribute(Qt.WidgetAttribute.WA_NativeWindow, True)
+        self.video_surface.setGeometry(self.rect())
         player = instance.media_player_new()
-        player.set_hwnd(int(self.winId()))
+        player.set_hwnd(int(self.video_surface.winId()))
         player.video_set_mouse_input(False)
         player.video_set_key_input(False)
         self.current_key = None
-        self.worker = PlaybackWorker(instance, player, hwnd=int(self.winId()), profile=host.playback_profile)
+        self.worker = PlaybackWorker(instance, player, hwnd=int(self.video_surface.winId()), profile=host.playback_profile)
         self.attempt_started = 0
         self.retry_at = None
         self.retry_count = 0
@@ -103,6 +111,8 @@ class PlayerTile(QWidget):
         self.apply_audio(camera)
 
     def start_attempt(self, camera, reset=False):
+        self.source_ratio, self.source_size = None, None
+        self.update_video_geometry()
         self.attempt_started = time.monotonic()
         self.last_clock = None
         self.clock_progress_seen = False
@@ -140,6 +150,25 @@ class PlayerTile(QWidget):
         self.status_text = ''
         self.ever_played = False
         self.initial_failed = False
+        self.source_ratio, self.source_size = None, None
+        self.update_video_geometry()
+
+    def resizeEvent(self, event):
+        if hasattr(self, 'video_surface'):
+            self.update_video_geometry()
+        super().resizeEvent(event)
+
+    def update_video_geometry(self, read_size=False):
+        if (read_size and not self.worker.busy and not self.worker.closing
+                and not self.worker.done.is_set() and not self.worker.error and self.player.has_vout() > 0):
+            size = self.player.video_get_size(0)
+            if size and size[0] > 0 and size[1] > 0 and size != self.source_size:
+                self.source_ratio = display_ratio(self.player, *size)
+                self.source_size = size
+        rect = (cover_rect(self.width(), self.height(), self.source_ratio)
+                if self.host.view_mode(self.index) == 'fill' else self.rect())
+        if self.video_surface.geometry() != rect:
+            self.video_surface.setGeometry(rect)
 
     def media_statistics(self):
         import vlc
@@ -628,6 +657,7 @@ class PlayerWindow(QWidget):
         self.config, self.instance, self.persist_enabled = config, instance, persist
         self.config.setdefault('master_muted', False)
         self.config.setdefault('split_orientation', 'horizontal')
+        self.config.setdefault('view_modes', {str(count): ['fit'] * 4 for count in (1, 2, 4)})
         self.playback_profile = QApplication.instance().property('playback_profile') or 'auto'
         QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeMenu, False)
         QApplication.setEffectEnabled(Qt.UIEffect.UI_AnimateMenu, False)
@@ -1244,6 +1274,7 @@ class PlayerWindow(QWidget):
                 tile.last_frame_count, tile.last_frame_progress = None, now
             stalled = state == 3 and (tile.clock_stalled(now) or (visible_output and tile.frames_stalled(now)))
             if state == 3 and tile.player.has_vout() > 0 and not tile.worker.error and not stalled:
+                tile.update_video_geometry(read_size=True)
                 tile.ever_played = True
                 tile.initial_failed = False
                 tile.status_text = ''
@@ -1474,6 +1505,52 @@ class PlayerWindow(QWidget):
             menu.addAction(icon('close'), '이 화면 비우기', lambda: self.assign_camera(index, None, keep_focus=True))
         menu.addAction(icon('cameras'), menu_text(CAMERAS, 'Ctrl+M'), self.manage_cameras)
 
+    def view_mode(self, index):
+        modes = self.config['view_modes'].get(str(self.config['layout']), [])
+        return 'fill' if index < len(modes) and modes[index] == 'fill' else 'fit'
+
+    def set_view_mode(self, index, mode):
+        if mode not in ('fit', 'fill') or not 0 <= index < self.config['layout']:
+            return
+        modes = self.config['view_modes'].setdefault(str(self.config['layout']), ['fit'] * 4)
+        modes += ['fit'] * max(0, 4 - len(modes))
+        modes[index] = mode
+        self.tiles[index].update_video_geometry(read_size=True)
+        self.queue_save()
+
+    def fitted_window_size(self):
+        if self.closing or self.isFullScreen() or self.isMaximized():
+            return None
+        indices = ([self.focused_screen] if self.focused_screen is not None
+                   else list(range(self.config['layout'])))
+        if self.selected in indices:
+            indices.remove(self.selected)
+            indices.insert(0, self.selected)
+        for index in indices:
+            tile = self.tiles[index]
+            if (not self.camera_for_slot(index) or tile.worker.busy or tile.worker.closing
+                    or tile.worker.done.is_set() or tile.worker.error):
+                continue
+            tile.update_video_geometry(read_size=True)
+            if tile.source_ratio and tile.player.has_vout() > 0:
+                if self.focused_screen is not None or self.config['layout'] == 1:
+                    columns, rows = 1, 1
+                elif self.config['layout'] == 2 and self.config['split_orientation'] == 'vertical':
+                    columns, rows = 1, 2
+                else:
+                    columns, rows = 2, self.config['layout'] // 2
+                return smaller_size(self.width(), self.height(), tile.source_ratio * columns / rows,
+                                    self.minimumSize())
+        return None
+
+    def fit_window_to_video(self):
+        size = self.fitted_window_size()
+        if size is not None:
+            self.resize(size)
+            self.grid.activate()
+            self.sync_overlays()
+            self.queue_save()
+
     def build_context_menu(self, index, parent=None):
         menu = self.new_menu(parent=parent)
         camera = self.camera_for_slot(index)
@@ -1482,6 +1559,15 @@ class PlayerWindow(QWidget):
         assign = menu.addMenu(icon('camera'), '이 화면의 카메라 지정')
         self.populate_camera_menu(assign, index)
         if camera:
+            view = menu.addMenu(icon('video_fit'), '영상 맞춤')
+            view_group = QActionGroup(view)
+            view_group.setExclusive(True)
+            for mode, label, symbol in (('fit', '전체 보기', 'video_fit'), ('fill', '꽉 채우기', 'video_fill')):
+                action = view.addAction(icon(symbol), label)
+                action.setCheckable(True)
+                action.setChecked(self.view_mode(index) == mode)
+                view_group.addAction(action)
+                action.triggered.connect(lambda checked=False, value=mode: self.set_view_mode(index, value))
             quality = menu.addMenu(icon('quality'), '이 영상 화질')
             quality.setEnabled(supports_quality(camera))
             quality.setToolTip('사용자 지정 경로는 카메라 수정에서 영상 경로 (SD)를 추가하세요.')
@@ -1546,6 +1632,12 @@ class PlayerWindow(QWidget):
         menu.addAction(icon('cameras'), menu_text(CAMERAS, 'Ctrl+M'), self.manage_cameras)
         menu.addAction(icon('restore' if self.isFullScreen() else 'fullscreen'),
             menu_text(fullscreen_name(self.isFullScreen()), 'F11'), self.toggle_layout_fullscreen)
+        fit_window = menu.addAction(icon('window_fit'), '창을 영상에 맞추기', self.fit_window_to_video)
+        fit_size = self.fitted_window_size()
+        fit_window.setEnabled(fit_size is not None)
+        if fit_size is None:
+            fit_window.setToolTip('일반 창에서 사용하세요.' if self.isFullScreen() or self.isMaximized()
+                                  else '영상을 재생하고 창에 충분한 공간이 있을 때 사용할 수 있습니다.')
         menu.addSeparator()
         menu.addAction(icon('pin'), menu_text(topmost_name(self.config['always_on_top']), 'Ctrl+T'),
             lambda: self.set_always_on_top(not self.config['always_on_top']))

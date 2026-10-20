@@ -85,6 +85,16 @@ def icon(name, color='#e1eaf8'):
     elif name == 'opacity':
         painter.drawEllipse(QRectF(4, 4, 16, 16))
         painter.setBrush(QColor(color)); painter.drawPie(QRectF(7, 7, 10, 10), 90 * 16, 180 * 16)
+    elif name in ('video_fit', 'video_fill', 'window_fit'):
+        painter.drawRoundedRect(QRectF(3, 4, 18, 16), 2, 2)
+        if name == 'video_fit':
+            painter.drawRect(QRectF(5, 8, 14, 8))
+        elif name == 'video_fill':
+            for x, y, dx, dy in ((6, 7, 1, 1), (18, 7, -1, 1), (6, 17, 1, -1), (18, 17, -1, -1)):
+                line(x, y, x + 4 * dx, y); line(x, y, x, y + 4 * dy)
+        else:
+            line(8, 9, 11, 12); line(8, 15, 11, 12)
+            line(16, 9, 13, 12); line(16, 15, 13, 12)
     elif name == 'chip':
         painter.drawRect(QRectF(7, 7, 10, 10))
         for n in (8, 12, 16):

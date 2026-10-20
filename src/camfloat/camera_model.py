@@ -87,7 +87,8 @@ def new_camera(name='', url=''):
 def default_config():
     return dict(version=4, cameras=[], slots=[None] * 4, layout_slots=None, layout=1, split_orientation='horizontal', always_on_top=False,
                 hardware_acceleration=True, master_muted=False, opacity=80, geometry=None,
-                verify_connection_info=True, shortcuts_prompted=False)
+                verify_connection_info=True, shortcuts_prompted=False,
+                view_modes={str(count): ['fit'] * 4 for count in (1, 2, 4)})
 
 
 def reset_settings(cameras):
@@ -197,6 +198,14 @@ def normalize(raw, encrypted=False):
     result['layout'] = layout if type(layout) is int and layout in (1, 2, 4) else 1
     orientation = raw.get('split_orientation', 'horizontal')
     result['split_orientation'] = 'vertical' if orientation == 'vertical' else 'horizontal'
+    modes = raw.get('view_modes')
+    if isinstance(modes, dict):
+        for count in (1, 2, 4):
+            values = modes.get(str(count))
+            if isinstance(values, list):
+                result['view_modes'][str(count)] = [
+                    'fill' if index < count and index < len(values) and values[index] == 'fill' else 'fit'
+                    for index in range(4)]
     result['opacity'] = bounded_int(raw.get('opacity'), result['opacity'], 20, 100)
     geometry = raw.get('geometry')
     if isinstance(geometry, list) and len(geometry) == 4:
