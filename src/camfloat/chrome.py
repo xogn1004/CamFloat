@@ -25,6 +25,9 @@ class AppChrome(QWidget):
         super().__init__(host, Qt.WindowType.Tool | Qt.WindowType.FramelessWindowHint
                          | Qt.WindowType.NoDropShadowWindowHint)
         self.host = host
+        self.control_scale = 1
+        self.separators = []
+        self.section_gaps = []
         self.tips = HoverTips(self)
         self.setWindowTitle('CamFloat · 앱 도구')
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -36,6 +39,7 @@ class AppChrome(QWidget):
         self.panel.setGeometry(self.rect())
         self.panel.setStyleSheet(PANEL_STYLE)
         row = QHBoxLayout(self.panel)
+        self.row = row
         row.setContentsMargins(6, 4, 6, 4)
         row.setSpacing(2)
         self.layout_buttons = {}
@@ -49,7 +53,9 @@ class AppChrome(QWidget):
         separator.setFixedSize(1, 18)
         separator.setStyleSheet('background:rgba(174,194,223,35);border:0;')
         row.addWidget(separator)
+        self.separators.append(separator)
         row.addSpacing(3)
+        self.section_gaps.append(row.itemAt(row.count() - 1).spacerItem())
         self.master_mute = self.button(row, 'volume', tooltip('전체 음소거', 'Ctrl+Shift+M'), host.mute_all)
         self.master_mute.setCheckable(True)
         self.manager = self.button(row, 'cameras', tooltip(CAMERAS, 'Ctrl+M'), host.manage_cameras)
@@ -58,7 +64,9 @@ class AppChrome(QWidget):
         separator.setFixedSize(1, 18)
         separator.setStyleSheet('background:rgba(174,194,223,35);border:0;')
         row.addWidget(separator)
+        self.separators.append(separator)
         row.addSpacing(3)
+        self.section_gaps.append(row.itemAt(row.count() - 1).spacerItem())
         self.pin = self.button(row, 'pin', tooltip('항상 위에', 'Ctrl+T'),
                                lambda: host.set_always_on_top(not host.config['always_on_top']))
         self.pin.setCheckable(True)
@@ -108,10 +116,46 @@ class AppChrome(QWidget):
         self.fullscreen.setToolTip(tooltip(fullscreen_name(self.host.isFullScreen()), 'F11'))
         self.fullscreen.setAccessibleName(self.fullscreen.toolTip())
 
+    def update_scale(self):
+        # Use the whole app's logical size, independently of its SCREEN layout.
+        large = self.control_scale == 1.5
+        if large:
+            large = self.host.width() >= 900 and self.host.height() >= 500
+        else:
+            large = self.host.width() >= 960 and self.host.height() >= 540
+        scale = 1.5 if large else 1
+        if scale == self.control_scale:
+            return
+        self.control_scale = scale
+        self.tips.clear()
+        self.resize(round(270 * scale), round(36 * scale))
+        self.panel.setGeometry(self.rect())
+        self.panel.setStyleSheet(PANEL_STYLE +
+            f'QFrame#panel{{border-radius:{round(12 * scale)}px;}}'
+            f'QToolButton{{border-radius:{round(7 * scale)}px;font-size:{round(11 * scale)}px;}}')
+        self.row.setContentsMargins(round(6 * scale), round(4 * scale), round(6 * scale), round(4 * scale))
+        self.row.setSpacing(round(2 * scale))
+        for button in self.panel.findChildren(QToolButton):
+            width = 24 if button in self.layout_buttons.values() else 28
+            button.setFixedSize(round(width * scale), round(28 * scale))
+            button.setIconSize(QSize(round(16 * scale), round(16 * scale)))
+        for separator in self.separators:
+            separator.setFixedSize(round(scale), round(18 * scale))
+        for gap in self.section_gaps:
+            gap.changeSize(round(3 * scale), 0)
+        self.row.invalidate()
+        self.row.activate()
+        self.panel.update()
+
     def position(self):
-        position = self.host.mapToGlobal(QPoint((self.host.width() - self.width()) // 2, 10))
+        previous = QRect(self.geometry())
+        self.update_scale()
+        position = self.host.mapToGlobal(QPoint((self.host.width() - self.width()) // 2, round(10 * self.control_scale)))
         if self.pos() != position:
             self.move(position)
+        if self.isVisible() and self.geometry() != previous:
+            self.repaint_exposed(previous)
+            self.host.position_screen_labels()
 
     def maintain_front(self):
         if (not self.isVisible() or self.menu_open or QApplication.activePopupWidget() is not None
@@ -127,13 +171,16 @@ class AppChrome(QWidget):
         # Recompose the layered input surfaces exposed by this owned window.
         exposed = QRect(self.geometry())
         super().hideEvent(event)
+        self.repaint_exposed(exposed)
+        self.host.position_screen_labels()
+
+    def repaint_exposed(self, exposed):
         for tile in self.host.tiles:
             overlay = tile.overlay
             intersection = exposed.intersected(overlay.geometry())
             if overlay.isVisible() and not intersection.isEmpty():
                 intersection.translate(-overlay.pos())
                 overlay.update(intersection)
-        self.host.position_screen_labels()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -164,10 +211,13 @@ class AppChrome(QWidget):
         # In particular, do not show()/set_topmost() a hidden toolbar here.
         if QApplication.activePopupWidget() is not None:
             return
+        self.position()
         # No invisible window covers the video. Only the narrow top-centre zone
         # reveals controls; keep them while crossing from video to the toolbar.
         point = self.host.mapFromGlobal(QCursor.pos())
-        zone = QRect((self.host.width() - self.width()) // 2 - 8, 10, self.width() + 16, 48)
+        padding = round(8 * self.control_scale)
+        zone = QRect((self.host.width() - self.width()) // 2 - padding, round(10 * self.control_scale),
+                     self.width() + 2 * padding, self.height() + round(12 * self.control_scale))
         if zone.contains(point) and (self.host.config['always_on_top'] or self.host.app_is_foreground()):
             self.reveal()
             return
@@ -181,7 +231,7 @@ class AppChrome(QWidget):
         self.menu_open = True
         menu = self.host.build_app_menu(self)
         try:
-            menu.exec(self.more.mapToGlobal(QPoint(self.more.width(), self.more.height() + 10))
+            menu.exec(self.more.mapToGlobal(QPoint(self.more.width(), self.more.height() + round(10 * self.control_scale)))
                       - QPoint(menu.sizeHint().width(), 0))
         finally:
             self.menu_open = False
