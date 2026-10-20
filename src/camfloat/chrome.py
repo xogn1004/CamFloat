@@ -117,12 +117,11 @@ class AppChrome(QWidget):
         self.fullscreen.setAccessibleName(self.fullscreen.toolTip())
 
     def update_scale(self):
-        # Use the whole app's logical size, independently of its SCREEN layout.
-        large = self.control_scale == 1.5
-        if large:
-            large = self.host.width() >= 900 and self.host.height() >= 500
-        else:
-            large = self.host.width() >= 960 and self.host.height() >= 540
+        # Follow visible SCREEN controls, including their resize hysteresis.
+        # An enlarged overlay hidden behind another SCREEN must not affect us.
+        large = any(tile.overlay.control_scale == 2
+                    for index, tile in enumerate(self.host.tiles[:self.host.config['layout']])
+                    if self.host.focused_screen is None or index == self.host.focused_screen)
         scale = 1.5 if large else 1
         if scale == self.control_scale:
             return
