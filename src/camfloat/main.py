@@ -384,12 +384,12 @@ class InputOverlay(QWidget):
 
     def update_control_scale(self):
         # Qt sizes are logical pixels: Windows display scaling is already applied.
-        large = self.control_scale == 2
+        large = self.control_scale > 1
         if large:
             large = self.width() >= 900 and self.height() >= 500
         else:
             large = self.width() >= 960 and self.height() >= 540
-        scale = 2 if large else 1
+        scale = 1.5 if large else 1
         if scale == self.control_scale:
             return
         self.control_scale = scale
@@ -442,22 +442,28 @@ class InputOverlay(QWidget):
         self.volume.setVisible(expanded)
         self.value.setVisible(expanded)
         narrow = self.width() < 180
-        button_width = (26 if expanded else (20 if narrow else 24)) * scale
-        spacing = (3 if expanded else (1 if narrow else 2)) * scale
-        self.bar.layout().setContentsMargins(5 * scale, 3 * scale, 5 * scale, 3 * scale)
+        button_width = round((26 if expanded else (20 if narrow else 24)) * scale)
+        spacing = round((3 if expanded else (1 if narrow else 2)) * scale)
+        margin_x, margin_y = round(5 * scale), round(3 * scale)
+        self.bar.layout().setContentsMargins(margin_x, margin_y, margin_x, margin_y)
         self.bar.layout().setSpacing(spacing)
-        self.volume.setFixedWidth(64 * scale)
-        self.value.setFixedWidth(23 * scale)
-        width = 6 * button_width + 10 * scale + spacing * (8 if expanded else 5) + (87 * scale if expanded else 0)
+        self.volume.setFixedWidth(round(64 * scale))
+        self.value.setFixedWidth(round(23 * scale))
+        width = (6 * button_width + 2 * margin_x + spacing * (8 if expanded else 5)
+                 + (self.volume.width() + self.value.width() if expanded else 0))
         for item in (self.reload, self.snapshot, self.mute, self.move_camera, self.choose, self.fullscreen):
-            item.setFixedSize(button_width, 26 * scale)
-            item.setIconSize(QSize((16 if narrow else 17) * scale, (16 if narrow else 17) * scale))
-        self.bar.setGeometry(max(5, self.width() - width - 8 * scale), max(4, self.height() - 40 * scale), width, 32 * scale)
+            item.setFixedSize(button_width, round(26 * scale))
+            icon_size = round((16 if narrow else 17) * scale)
+            item.setIconSize(QSize(icon_size, icon_size))
+        self.bar.setGeometry(max(5, self.width() - width - round(8 * scale)),
+                             max(4, self.height() - round(40 * scale)), width,
+                             round(32 * scale))
         for item in (self.previous, self.following):
-            item.setFixedSize(32 * scale, 40 * scale)
-            item.setIconSize(QSize(17 * scale, 17 * scale))
-        self.previous.move(10 * scale, max(48 * scale, (self.height() - 40 * scale) // 2))
-        self.following.move(max(10 * scale, self.width() - 42 * scale), max(48 * scale, (self.height() - 40 * scale) // 2))
+            item.setFixedSize(round(32 * scale), round(40 * scale))
+            item.setIconSize(QSize(round(17 * scale), round(17 * scale)))
+        navigation_y = max(round(48 * scale), (self.height() - self.previous.height()) // 2)
+        self.previous.move(round(10 * scale), navigation_y)
+        self.following.move(max(round(10 * scale), self.width() - round(42 * scale)), navigation_y)
         if hasattr(self, 'direction_popup') and self.direction_popup.isVisible():
             self.direction_popup.arrange()
         if hasattr(self, 'screenshot_notice') and self.screenshot_notice.isVisible():

@@ -119,7 +119,7 @@ class AppChrome(QWidget):
     def update_scale(self):
         # Follow visible SCREEN controls, including their resize hysteresis.
         # An enlarged overlay hidden behind another SCREEN must not affect us.
-        large = any(tile.overlay.control_scale == 2
+        large = any(tile.overlay.control_scale > 1
                     for index, tile in enumerate(self.host.tiles[:self.host.config['layout']])
                     if self.host.focused_screen is None or index == self.host.focused_screen)
         scale = 1.5 if large else 1

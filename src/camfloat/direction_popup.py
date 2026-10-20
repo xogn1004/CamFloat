@@ -115,20 +115,20 @@ class DirectionPopup(QFrame):
         # Check available pane height as well as width, including a 150x90 pane.
         self.compact = overlay.width() < 310 or overlay.height() < 190
         message = bool(self.status.text())
-        width = (130 if self.compact or message else 100) * scale
-        height = (40 if self.compact and not message else 46 if message else 100) * scale
+        width = round((130 if self.compact or message else 100) * scale)
+        height = round((40 if self.compact and not message else 46 if message else 100) * scale)
         self.setFixedSize(width, height)
         positions = ({name: (6 + i * 30, 6) for i, name in enumerate(self.buttons)} if self.compact else
                      {'up': (36, 6), 'left': (6, 36), 'right': (66, 36), 'down': (36, 66)})
         for name, button in self.buttons.items():
-            button.setFixedSize(28 * scale, 28 * scale)
-            button.setIconSize(QSize(17 * scale, 17 * scale))
-            button.move(*(n * scale for n in positions[name]))
-        self.status.setStyleSheet(f'font-size:{15 if scale == 2 else 10}px;')
-        self.status.setGeometry(5 * scale, 4 * scale, width - 10 * scale, height - 8 * scale)
+            button.setFixedSize(round(28 * scale), round(28 * scale))
+            button.setIconSize(QSize(round(17 * scale), round(17 * scale)))
+            button.move(*(round(n * scale) for n in positions[name]))
+        self.status.setStyleSheet(f'font-size:{round(10 * scale)}px;')
+        self.status.setGeometry(round(5 * scale), round(4 * scale), width - round(10 * scale), height - round(8 * scale))
         anchor = overlay.move_camera.mapTo(overlay, QPoint(overlay.move_camera.width() // 2, 0))
         x = max(4, min(anchor.x() - width // 2, overlay.width() - width - 4))
-        y = max(4, min(anchor.y() - height - 5 * scale, overlay.height() - height - 4))
+        y = max(4, min(anchor.y() - height - round(5 * scale), overlay.height() - height - 4))
         self.move(x, y)
         self.raise_()
 
