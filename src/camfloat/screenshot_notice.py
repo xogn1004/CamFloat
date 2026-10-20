@@ -32,7 +32,8 @@ class ScreenshotNotice(QToolButton):
 
     def place(self):
         self.setFixedSize(min(max(90, self.sizeHint().width()), max(50, self.overlay.width() - 16)), 28)
-        self.move(max(4, (self.overlay.width() - self.width()) // 2), max(4, self.overlay.height() - 75))
+        self.move(max(4, (self.overlay.width() - self.width()) // 2),
+                  max(4, self.overlay.bar.y() - self.height() - 8 * self.overlay.control_scale))
 
     def open_folder(self):
         if self.can_open:

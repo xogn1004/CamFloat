@@ -6,11 +6,12 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPen, QPixmap, 
 
 @lru_cache(maxsize=64)
 def icon(name, color='#e1eaf8'):
-    pixmap = QPixmap(48, 48)
+    # Keep enlarged controls sharp on monitors with Windows scaling enabled.
+    pixmap = QPixmap(96, 96)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-    painter.scale(2, 2)
+    painter.scale(4, 4)
     painter.setPen(QPen(QColor(color), 1.65, Qt.PenStyle.SolidLine,
                         Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
     painter.setBrush(Qt.BrushStyle.NoBrush)

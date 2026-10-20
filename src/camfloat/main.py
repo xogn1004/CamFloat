@@ -192,12 +192,15 @@ class InputOverlay(QWidget):
         self.click_candidate = False
         self.dragged = False
         self.multi_click = False
+        self.control_scale = 1
+        self.label_margin = 8
         self.label = QWidget(self)
         self.label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         label_box = QVBoxLayout(self.label)
         label_box.setContentsMargins(0, 0, 0, 0)
         label_box.setSpacing(3)
         badges = QHBoxLayout()
+        self.badges = badges
         badges.setSpacing(5)
         self.screen_badge = QLabel(f'SCREEN {index + 1}')
         self.quality_badge = QLabel('HD')
@@ -260,6 +263,7 @@ class InputOverlay(QWidget):
         self.tips.add(self.volume)
         self.volume.valueChanged.connect(lambda value: self.host.set_volume(self.index, value))
         self.value = QLabel('100')
+        self.value_font_points = self.value.font().pointSizeF()
         self.value.setFixedWidth(23)
         self.value.setStyleSheet('background:transparent;')
         row.addWidget(self.reload)
@@ -342,7 +346,6 @@ class InputOverlay(QWidget):
         super().closeEvent(event)
 
     def resizeEvent(self, event):
-        self.label.move(8, 8)
         compact = self.width() < 230 or self.height() < 140
         self.empty.setGeometry(self.rect().adjusted(8, 32, -8, -8 if compact else -42))
         self.arrange_controls()
@@ -379,6 +382,50 @@ class InputOverlay(QWidget):
     def expanded_controls(self):
         return self.width() >= 310 and self.height() >= 150
 
+    def update_control_scale(self):
+        # Qt sizes are logical pixels: Windows display scaling is already applied.
+        large = self.control_scale == 2
+        if large:
+            large = self.width() >= 900 and self.height() >= 500
+        else:
+            large = self.width() >= 960 and self.height() >= 540
+        scale = 2 if large else 1
+        if scale == self.control_scale:
+            return
+        self.control_scale = scale
+        self.label_margin = 12 if large else 8
+        self.tips.clear()
+        self.label.layout().setSpacing(5 if large else 3)
+        self.badges.setSpacing(8 if large else 5)
+        for badge, background, color in (
+                (self.screen_badge, 'rgba(12,18,28,218)', '#e8f1ff'),
+                (self.quality_badge, 'rgba(43,105,174,155)', '#e9f4ff')):
+            badge.setStyleSheet(f'background:{background};color:{color};font-size:{15 if large else 10}px;'
+                f'font-weight:600;padding:{5 if large else 3}px {9 if large else 6}px;'
+                f'border-radius:{6 if large else 4}px;')
+        self.camera_name.setStyleSheet('background:rgba(12,18,28,205);color:#ecf3ff;'
+            f'font-size:{16.5 if large else 11}px;padding:{3 if large else 2}px {9 if large else 6}px;'
+            f'border-radius:{6 if large else 4}px;')
+        self.bar.setStyleSheet('QWidget#screenBar{background:rgba(19,24,33,235);'
+            f'border-radius:{10 * scale}px;'
+            'border:1px solid rgba(174,194,223,35);color:#dce8f8;}'
+            f'QSlider::groove:horizontal{{height:{3 * scale}px;background:#3b485c;border-radius:{scale}px;}}'
+            'QSlider::sub-page:horizontal{background:#8dbbfa;}'
+            f'QSlider::handle:horizontal{{background:#d4e6ff;width:{9 * scale}px;'
+            f'margin:-{3 * scale}px 0;border-radius:{4 * scale}px;}}')
+        for item in (self.reload, self.snapshot, self.mute, self.move_camera, self.choose, self.fullscreen):
+            item.setStyleSheet(f'QToolButton{{border:0;background:transparent;border-radius:{4 * scale}px;}}'
+                'QToolButton:hover{background:rgba(102,158,235,70);}'
+                'QToolButton:pressed{background:rgba(102,158,235,110);}'
+                'QToolButton:checked{background:rgba(102,158,235,80);}')
+        font = self.value.font()
+        font.setPointSizeF(max(1, self.value_font_points) * (1.5 if large else 1))
+        self.value.setFont(font)
+        for item in (self.previous, self.following):
+            item.setStyleSheet('QToolButton{background:rgba(12,18,28,190);border:0;'
+                f'border-radius:{7 * scale}px;}}'
+                'QToolButton:hover{background:rgba(48,101,170,220);}')
+
     def adjust_volume_wheel(self, event):
         camera = self.host.camera_for_slot(self.index)
         if camera and event.angleDelta().y():
@@ -387,24 +434,34 @@ class InputOverlay(QWidget):
         event.accept()
 
     def arrange_controls(self):
+        self.update_control_scale()
+        scale = self.control_scale
         expanded = self.expanded_controls()
         if expanded and hasattr(self, 'volume_popup'):
             self.volume_popup.hide()
         self.volume.setVisible(expanded)
         self.value.setVisible(expanded)
         narrow = self.width() < 180
-        button_width = 26 if expanded else (20 if narrow else 24)
-        spacing = 3 if expanded else (1 if narrow else 2)
+        button_width = (26 if expanded else (20 if narrow else 24)) * scale
+        spacing = (3 if expanded else (1 if narrow else 2)) * scale
+        self.bar.layout().setContentsMargins(5 * scale, 3 * scale, 5 * scale, 3 * scale)
         self.bar.layout().setSpacing(spacing)
-        width = 6 * button_width + 10 + spacing * (8 if expanded else 5) + (87 if expanded else 0)
+        self.volume.setFixedWidth(64 * scale)
+        self.value.setFixedWidth(23 * scale)
+        width = 6 * button_width + 10 * scale + spacing * (8 if expanded else 5) + (87 * scale if expanded else 0)
         for item in (self.reload, self.snapshot, self.mute, self.move_camera, self.choose, self.fullscreen):
-            item.setFixedSize(button_width, 26)
-            item.setIconSize(QSize(16 if narrow else 17, 16 if narrow else 17))
-        self.bar.setGeometry(max(5, self.width() - width - 8), max(4, self.height() - 40), width, 32)
-        self.previous.move(10, max(48, (self.height() - 40) // 2))
-        self.following.move(max(10, self.width() - 42), max(48, (self.height() - 40) // 2))
+            item.setFixedSize(button_width, 26 * scale)
+            item.setIconSize(QSize((16 if narrow else 17) * scale, (16 if narrow else 17) * scale))
+        self.bar.setGeometry(max(5, self.width() - width - 8 * scale), max(4, self.height() - 40 * scale), width, 32 * scale)
+        for item in (self.previous, self.following):
+            item.setFixedSize(32 * scale, 40 * scale)
+            item.setIconSize(QSize(17 * scale, 17 * scale))
+        self.previous.move(10 * scale, max(48 * scale, (self.height() - 40 * scale) // 2))
+        self.following.move(max(10 * scale, self.width() - 42 * scale), max(48 * scale, (self.height() - 40 * scale) // 2))
         if hasattr(self, 'direction_popup') and self.direction_popup.isVisible():
             self.direction_popup.arrange()
+        if hasattr(self, 'screenshot_notice') and self.screenshot_notice.isVisible():
+            self.screenshot_notice.place()
 
     def show_status(self, text):
         if self.width() < 230 or self.height() < 140:
@@ -413,17 +470,17 @@ class InputOverlay(QWidget):
         self.empty.setVisible(bool(text))
 
     def refresh(self):
+        self.arrange_controls()
         camera = self.host.camera_for_slot(self.index)
         name = camera_display_name(camera) if camera else ('카메라 없음' if self.host.config['layout'] == 1 else '비어 있음')
         self.screen_badge.setText(self.host.slot_name(self.index))
         self.quality_badge.setText(camera['quality'] if camera else '—')
         self.camera_name.setText(self.camera_name.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight,
-                                                                         max(20, self.width() - 32)))
+                                                                         max(20, self.width() - 4 * self.label_margin)))
         self.camera_name.setAccessibleName(name)
-        self.label.setMaximumWidth(max(110, self.width() - 16))
+        self.label.setMaximumWidth(max(110, self.width() - 2 * self.label_margin))
         self.label.adjustSize()
         self.label.setVisible(self.hovered)
-        self.arrange_controls()
         self.bar.setVisible(self.hovered)
         enlarged = self.host.focused_screen is not None
         navigation = self.hovered and (enlarged or (self.host.config['layout'] == 1 and
@@ -694,9 +751,11 @@ class PlayerWindow(QWidget):
     def position_screen_labels(self):
         for tile in self.tiles:
             overlay = tile.overlay
-            label_rect = QRect(overlay.mapToGlobal(QPoint(8, 8)), overlay.label.size())
+            margin = overlay.label_margin
+            label_rect = QRect(overlay.mapToGlobal(QPoint(margin, margin)), overlay.label.size())
             overlap = self.chrome.isVisible() and self.chrome.geometry().intersects(label_rect)
-            overlay.label.move(8, 62 if overlap and overlay.height() >= 180 else 8)
+            below_chrome = max(62, self.chrome.geometry().bottom() - overlay.y() + margin + 1)
+            overlay.label.move(margin, below_chrome if overlap and overlay.height() >= 180 else margin)
             overlay.label.setVisible(overlay.hovered and not (overlap and overlay.height() < 180))
 
     app_is_foreground = staticmethod(app_is_foreground)
